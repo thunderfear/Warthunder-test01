@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>个人成长阶段计划流程图</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; padding: 40px 20px; }
+  h1 { text-align: center; font-size: 28px; margin-bottom: 8px; color: #f8fafc; }
+  .subtitle { text-align: center; font-size: 14px; color: #94a3b8; margin-bottom: 40px; }
+  .container { max-width: 1100px; margin: 0 auto; }
+  .timeline-overview { display: flex; align-items: center; justify-content: center; gap: 0; margin-bottom: 50px; flex-wrap: wrap; }
+  .ov-node { background: #1e293b; border: 2px solid #334155; border-radius: 12px; padding: 12px 18px; text-align: center; min-width: 160px; position: relative; transition: all .3s; cursor: pointer; }
+  .ov-node:hover { transform: translateY(-4px); box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+  .ov-node.active { border-color: #3b82f6; background: #1e3a5f; }
+  .ov-node .ov-title { font-weight: 700; font-size: 14px; color: #f1f5f9; }
+  .ov-node .ov-date { font-size: 11px; color: #94a3b8; margin-top: 4px; }
+  .ov-node .ov-status { font-size: 11px; margin-top: 4px; font-weight: 600; }
+  .ov-node .ov-status.s-doing { color: #3b82f6; }
+  .ov-node .ov-status.s-wait { color: #64748b; }
+  .ov-arrow { width: 40px; height: 2px; background: linear-gradient(90deg, #334155, #475569); position: relative; flex-shrink: 0; }
+  .ov-arrow::after { content: '▶'; position: absolute; right: -6px; top: -8px; color: #475569; font-size: 12px; }
+  .stage-section { margin-bottom: 36px; border-radius: 16px; overflow: hidden; border: 1px solid #1e293b; }
+  .stage-header { padding: 18px 24px; display: flex; align-items: center; gap: 16px; }
+  .stage-header .stage-num { width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 18px; flex-shrink: 0; }
+  .stage-header .stage-info { flex: 1; }
+  .stage-header .stage-title { font-size: 18px; font-weight: 700; }
+  .stage-header .stage-period { font-size: 13px; opacity: .7; margin-top: 2px; }
+  .stage-header .stage-progress { font-size: 13px; font-weight: 600; text-align: right; min-width: 100px; }
+  .s1 .stage-header { background: linear-gradient(135deg, #1e3a5f, #1e293b); }
+  .s1 .stage-num { background: #3b82f6; color: #fff; }
+  .s1 .stage-progress { color: #60a5fa; }
+  .s2 .stage-header { background: linear-gradient(135deg, #1a3a2e, #1e293b); }
+  .s2 .stage-num { background: #10b981; color: #fff; }
+  .s2 .stage-progress { color: #34d399; }
+  .s3 .stage-header { background: linear-gradient(135deg, #3b1f5e, #1e293b); }
+  .s3 .stage-num { background: #8b5cf6; color: #fff; }
+  .s3 .stage-progress { color: #a78bfa; }
+  .s4 .stage-header { background: linear-gradient(135deg, #5e3b1f, #1e293b); }
+  .s4 .stage-num { background: #f59e0b; color: #fff; }
+  .s4 .stage-progress { color: #fbbf24; }
+  .s5 .stage-header { background: linear-gradient(135deg, #5e1f2e, #1e293b); }
+  .s5 .stage-num { background: #ef4444; color: #fff; }
+  .s5 .stage-progress { color: #f87171; }
+  .stage-body { background: #1e293b; padding: 24px; }
+  .flow-chart { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; margin-bottom: 20px; }
+  .flow-step { background: #0f172a; border: 1px solid #334155; border-radius: 10px; padding: 14px 16px; flex: 1 1 180px; min-width: 160px; max-width: 220px; }
+  .flow-step .step-label { font-size: 11px; color: #64748b; margin-bottom: 4px; }
+  .flow-step .step-title { font-size: 14px; font-weight: 600; color: #f1f5f9; }
+  .flow-step .step-desc { font-size: 12px; color: #94a3b8; margin-top: 6px; line-height: 1.5; }
+  .flow-arrow-h { display: flex; align-items: center; color: #475569; font-size: 18px; flex-shrink: 0; padding-top: 20px; }
+  .metrics-title { font-size: 14px; font-weight: 700; color: #94a3b8; margin-bottom: 12px; border-bottom: 1px solid #334155; padding-bottom: 8px; }
+  .metric-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+  .metric-item { display: flex; align-items: center; gap: 10px; background: #0f172a; border-radius: 8px; padding: 10px 14px; }
+  .metric-icon { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }
+  .metric-icon.done { background: #166534; color: #4ade80; }
+  .metric-icon.doing { background: #1e3a5f; color: #60a5fa; }
+  .metric-icon.wait { background: #1e293b; color: #475569; border: 1px solid #334155; }
+  .metric-text { font-size: 13px; color: #cbd5e1; flex: 1; }
+  .metric-status { font-size: 11px; font-weight: 600; white-space: nowrap; }
+  .metric-status.done { color: #4ade80; }
+  .metric-status.doing { color: #60a5fa; }
+  .metric-status.wait { color: #475569; }
+  .stage-connector { display: flex; justify-content: center; padding: 4px 0; }
+  .stage-connector .arrow-down { width: 2px; height: 28px; background: linear-gradient(180deg, #334155, #475569); position: relative; }
+  .stage-connector .arrow-down::after { content: '▼'; position: absolute; bottom: -12px; left: -5px; color: #475569; font-size: 12px; }
+  .summary-box { background: linear-gradient(135deg, #1e293b, #0f172a); border: 2px solid #334155; border-radius: 16px; padding: 24px; margin-top: 20px; }
+  .summary-box h3 { font-size: 18px; margin-bottom: 16px; color: #f8fafc; }
+  .capability-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+  .cap-item { background: #0f172a; border: 1px solid #334155; border-radius: 10px; padding: 14px; text-align: center; }
+  .cap-item .cap-icon { font-size: 28px; margin-bottom: 8px; }
+  .cap-item .cap-name { font-size: 14px; font-weight: 600; color: #f1f5f9; }
+  .cap-item .cap-desc { font-size: 12px; color: #94a3b8; margin-top: 6px; line-height: 1.4; }
+  .progress-bar { width: 100%; height: 6px; background: #0f172a; border-radius: 3px; margin-top: 8px; overflow: hidden; }
+  .progress-bar .fill { height: 100%; border-radius: 3px; }
+  .s1 .fill { background: #3b82f6; }
+  .s2 .fill { background: #10b981; }
+  .s3 .fill { background: #8b5cf6; }
+  .s4 .fill { background: #f59e0b; }
+  .s5 .fill { background: #ef4444; }
+  @media (max-width: 768px) {
+    .flow-chart { flex-direction: column; }
+    .flow-arrow-h { transform: rotate(90deg); justify-content: center; padding: 4px 0; }
+    .flow-step { max-width: 100%; }
+    .timeline-overview { flex-direction: column; }
+    .ov-arrow { width: 2px; height: 20px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🚀 个人成长阶段计划流程图</h1>
+  <p class="subtitle">QA测试工程师（实习） | 业务线：汽车营销系统 | 2026.07 - 2027.06</p>
+
+  <!-- 总览时间线 -->
+  <div class="timeline-overview">
+    <div class="ov-node active">
+      <div class="ov-title">阶段1 融入与基础构建</div>
+      <div class="ov-date">2026.07 - 2026.09</div>
+      <div class="ov-status s-doing">● 进行中 (2/6)</div>
+    </div>
+    <div class="ov-arrow"></div>
+    <div class="ov-node">
+      <div class="ov-title">阶段2 技能深化</div>
+      <div class="ov-date">2026.10 - 2026.12</div>
+      <div class="ov-status s-wait">○ 待开始</div>
+    </div>
+    <div class="ov-arrow"></div>
+    <div class="ov-node">
+      <div class="ov-title">阶段3 自动化实战</div>
+      <div class="ov-date">2027.01 - 2027.03</div>
+      <div class="ov-status s-wait">○ 待开始</div>
+    </div>
+    <div class="ov-arrow"></div>
+    <div class="ov-node">
+      <div class="ov-title">阶段4 价值输出</div>
+      <div class="ov-date">2027.04 - 2027.06</div>
+      <div class="ov-status s-wait">○ 待开始</div>
+    </div>
+  </div>
+
+  <!-- 阶段1 -->
+  <div class="stage-section s1">
+    <div class="stage-header">
+      <div class="stage-num">1</div>
+      <div class="stage-info">
+        <div class="stage-title">融入与基础构建</div>
+        <div class="stage-period">2026.07.01 - 2026.09.30（3个月）</div>
+      </div>
+      <div class="stage-progress">2/6 已完成<br><small>进行中 1/6</small></div>
+    </div>
+    <div class="stage-body">
+      <div class="flow-chart">
+        <div class="flow-step"><div class="step-label">STEP 1</div><div class="step-title">公司文化学习</div><div class="step-desc">吉利汽车公司文化、组织架构及研发流程介绍</div></div>
+        <div class="flow-arrow-h">→</div>
+        <div class="flow-step"><div class="step-label">STEP 2</div><div class="step-title">业务全景学习</div><div class="step-desc">营销业务：营销活动→订单→售后等全链路</div></div>
+        <div class="flow-arrow-h">→</div>
+        <div class="flow-step"><div class="step-label">STEP 3</div><div class="step-title">测试基础理论</div><div class="step-desc">用例设计方法、等价类/边界值/场景法</div></div>
+        <div class="flow-arrow-h">→</div>
+        <div class="flow-step"><div class="step-label">STEP 4</div><div class="step-title">产研工具学习</div><div class="step-desc">PMP、极测等产研管理工具</div></div>
+        <div class="flow-arrow-h">→</div>
+        <div class="flow-step"><div class="step-label">STEP 5</div><div class="step-title">数据库基础</div><div class="step-desc">SQL 查询学习与实践 ✅</div></div>
+        <div class="flow-arrow-h">→</div>
+        <div class="flow-step"><div class="step-label">STEP 6</div><div class="step-title">参与实际项目</div><div class="step-desc">跟随导师执行测试，提交Bug (22/30)</div></div>
+      </div>
+      <div class="metrics-title">📋 衡量标准</div>
+      <div class="metric-list">
+        <div class="metric-item"><div class="metric-icon doing">◐</div><div class="metric-text">能画出所在团队的研发流程图</div><div class="metric-status doing">进行中</div></div>
+        <div class="metric-item"><div class="metric-icon wait">○</div><div class="metric-text">输出一份业务链路理解文档</div><div class="metric-status wait">未开始</div></div>
+        <div class="metric-item"><div class="metric-icon wait">○</div><div class="metric-text">完成 3 个模块测试用例编写并通过评审</div><div class="metric-status wait">未开始</div></div>
+        <div class="metric-item"><div class="metric-icon done">✓</div><div class="metric-text">能规范提交缺陷，包含完整复现步骤</div><div class="metric-status done">已完成</div></div>
+        <div class="metric-item"><div class="metric-icon done">✓</div><div class="metric-text">编写常用 SQL</div><div class="metric-status done">已完成</div></div>
+        <div class="metric-item"><div class="metric-icon doing">◐</div><div class="metric-text">独立执行测试任务，提交有效 Bug ≥ 30 个</div><div class="metric-status doing">22/30</div></div>
+      </div>
+      <div class="progress-bar"><div class="fill" style="width:33%"></div></div>
+    </div>
+  </div>
+
+  <div class="stage-connector"><div class="arrow-down"></div></div>
+
+  <!-- 阶段2 -->
+  <div class="stage-section s2">
+    <div class="stage-header">
+      <div class="stage-num">2</div>
+      <div class="stage-info">
+        <div class="stage-title">技能深化与独立实战</div>
+        <div class="stage-period">2026.10.01 - 2026.12.31（3个月）</div>
+      </div>
+      <div class="stage-progress">0/5 已完成</div>
+    </div>
+    <div class="stage-body">
+      <div class="flow-chart">
+        <div class="flow-step"><div class="step-label">STEP 1</div><div class="step-title">接口测试基础</div><div class="step-desc">HTTP 协议、Postman、JMeter 使用</div></div>
+        <div class="flow-arrow-h">→</div>
+        <div class="flow-step"><div class="step-label">STEP 2</div><div class="step-title">接口自动化入门</div><div class="step-desc">编写接口自动化用例 ≥ 30 个</div></div>
+        <div class="flow-arrow-h">→</div>
+        <div class="flow-step"><div class="step-label">STEP 3</div><div class="step-title">深入核心模块</div><div class="step-desc">深入营销核心模块，输出测试脑图</div></div>
+        <div class="flow-arrow-h">→</div>
+        <div class="flow-step"><div class="step-label">STEP 4</div><div class="step-title">独立负责模块</div><div class="step-desc">参与迭代测试，独立负责 1-2 个模块</div></div>
+        <div class="flow-arrow-h">→</div>
+        <div class="flow-step"><div class="step-label">STEP 5</div><div class="step-title">代码阅读能力</div><div class="step-desc">Git 基础、读懂业务代码逻辑，定位Bug根因</div></div>
+      </div>
+      <div class="metrics-title">📋 衡量标准</div>
+      <div class="metric-list">
+        <div class="metric-item"><div class="metric-icon wait">○</div><div class="metric-text">能使用 Postman 完成接口调试</div><div class="metric-status wait">待开始</div></div>
+        <div class="metric-item"><div class="metric-icon wait">○</div><div class="metric-text">编写 ≥ 30 个接口自动化用例</div><div class="metric-status wait">待开始</div></div>
+        <div class="metric-item"><div class="metric-icon wait">○</div><div class="metric-text">输出负责模块的测试脑图</div><div class="metric-status wait">待开始</div></div>
+        <div class="metric-item"><div class="metric-icon wait">○</div><div class="metric-text">独立完成模块测试，输出测试报告</div><div class="metric-status wait">待开始</div></div>
+        <div class="metric-item"><div class="metric-icon wait">○</div><div class="metric-text">能通过代码定位简单 Bug 根因</div><div class="metric-status wait">待开始</div></div>
+      </div>
+      <div class="progress-bar"><div class="fill" style="width:0%"></div></div>
+    </div>
+  </div>
+
+  <div class="stage-connector"><div class="arrow-down"></div></div>
+
+  <!-- 阶段3 -->
+  <div class="stage-section s3">
+    <div class="stage-header">
+      <div class="stage-num">3</div>
+      <div class="stage-info">
+        <div class="stage-title">自动化实战与专项突破</div>
+        <div class="stage-period">2027.01.01 - 2027.03.31（3个月）</div>
+      </div>
+      <div class="stage-progress">0/4 已完成</div>
+    </div>
+    <div class="stage-body">
+      <div class="flow-chart">
+        <div class="flow-step"><div class="step-label">STEP 1</div><div class="step-title">自动化框架深入</div><div class="step-desc">UI 自动化和接口自动化框架学习</div></div>
+        <div class="flow-arrow-h">→</div>
+        <div class="flow-step"><div class="step-label">STEP 2</div><div class="step-title">CI/CD 流水线</div><div class="step-desc">Jenkins/GitLab CI 集成测试流程</div></div>
+        <div class="flow-arrow-h">→</div>
+        <div class="flow-step"><div class="step-label">STEP 3</div><div class="step-title">测试数据管理</div><div class="step-desc">造数工具、数据驱动测试</div></div>
+        <div class="flow-arrow-h">→</div>
+        <div class="flow-step"><div class="step-label">STEP 4</div><div class="step-title">独立承担迭代</div><div class="step-desc">独立承担一个完整迭代的测试工作</div></div>
+      </div>
+      <div class="metrics-title">📋 衡量标准</div>
+      <div class="metric-list">
+        <div class="metric-item"><div class="metric-icon wait">○</div><div class="metric-text">新增 ≥ 50 个自动化用例，纳入 CI 流水线</div><div class="metric-status wait">待开始</div></div>
+        <div class="metric-item"><div class="metric-icon wait">○</div><div class="metric-text">能触发构建、分析测试报告、定位失败原因</div><div class="metric-status wait">待开始</div></div>
+        <div class="metric-item"><div class="metric-icon wait">○</div><div class="metric-text">总结常用造数方法文档</div><div class="metric-status wait">待开始</div></div>
+        <div class="metric-item"><div class="metric-icon wait">○</div><div class="metric-text">完成迭代测试全流程（计划→用例→执行→报告）</div><div class="metric-status wait">待开始</div></div>
+      </div>
+      <div class="progress-bar"><div class="fill" style="width:0%"></div></div>
+    </div>
+  </div>
+
+  <div class="stage-connector"><div class="arrow-down"></div></div>
+
+  <!-- 阶段4 -->
+  <div class="stage-section s4">
+    <div class="stage-header">
+      <div class="stage-num">4</div>
+      <div class="stage-info">
+        <div class="stage-title">价值输出与职业定型</div>
+        <div class="stage-period">2027.04.01 - 2027.06.30（3个月）</div>
+      </div>
+      <div class="stage-progress">0/5 已完成</div>
+    </div>
+    <div class="stage-body">
+      <div class="flow-chart">
+        <div class="flow-step"><div class="step-label">STEP 1</div><div class="step-title">质量度量与分析</div><div class="step-desc">缺陷趋势分析、覆盖率统计、质量报告</div></div>
+        <div class="flow-arrow-h">→</div>
+        <div class="flow-step"><div class="step-label">STEP 2</div><div class="step-title">流程优化实践</div><div class="step-desc">识别流程痛点，提出改进方案</div></div>
+        <div class="flow-arrow-h">→</div>
+        <div class="flow-step"><div class="step-label">STEP 3</div><div class="step-title">知识库建设</div><div class="step-desc">编写测试规范、最佳实践文档 ≥ 3 篇</div></div>
+        <div class="flow-arrow-h">→</div>
+        <div class="flow-step"><div class="step-label">STEP 4</div><div class="step-title">跨团队协作</div><div class="step-desc">参与需求评审、技术方案评审</div></div>
+        <div class="flow-arrow-h">→</div>
+        <div class="flow-step"><div class="step-label">STEP 5</div><div class="step-title">主导质量保障</div><div class="step-desc">主导一个小型项目完整质量保障</div></div>
+      </div>
+      <div class="metrics-title">📋 衡量标准</div>
+      <div class="metric-list">
+        <div class="metric-item"><div class="metric-icon wait">○</div><div class="metric-text">独立输出质量分析报告</div><div class="metric-status wait">待开始</div></div>
+        <div class="metric-item"><div class="metric-icon wait">○</div><div class="metric-text">提出 ≥ 1 项可落地的流程改进建议</div><div class="metric-status wait">待开始</div></div>
+        <div class="metric-item"><div class="metric-icon wait">○</div><div class="metric-text">贡献 ≥ 3 篇知识文档到团队知识库</div><div class="metric-status wait">待开始</div></div>
+        <div class="metric-item"><div class="metric-icon wait">○</div><div class="metric-text">评审中主动提出有效建议 ≥ 5 次</div><div class="metric-status wait">待开始</div></div>
+        <div class="metric-item"><div class="metric-icon wait">○</div><div class="metric-text">从需求到上线的全流程质量保障</div><div class="metric-status wait">待开始</div></div>
+      </div>
+      <div class="progress-bar"><div class="fill" style="width:0%"></div></div>
+    </div>
+  </div>
+
+  <div class="stage-connector"><div class="arrow-down"></div></div>
+
+  <!-- 阶段5 总目标 -->
+  <div class="stage-section s5">
+    <div class="stage-header">
+      <div class="stage-num">★</div>
+      <div class="stage-info">
+        <div class="stage-title">终极目标：从学习者 → 独立交付的初级测试工程师</div>
+        <div class="stage-period">2026.07.01 - 2027.06.30（全年）</div>
+      </div>
+      <div class="stage-progress">进行中</div>
+    </div>
+    <div class="stage-body">
+      <div class="summary-box" style="margin-top:0;">
+        <h3>🎯 五大能力维度</h3>
+        <div class="capability-grid">
+          <div class="cap-item"><div class="cap-icon">🏎️</div><div class="cap-name">业务能力</div><div class="cap-desc">深入理解汽车营销全链路，具备测试视角反推业务风险能力</div></div>
+          <div class="cap-item"><div class="cap-icon">⚙️</div><div class="cap-name">技术能力</div><div class="cap-desc">功能测试、接口测试、UI自动化、AI赋能实操</div></div>
+          <div class="cap-item"><div class="cap-icon">🏗️</div><div class="cap-name">体系能力</div><div class="cap-desc">需求介入到上线验证的端到端质量保障</div></div>
+          <div class="cap-item"><div class="cap-icon">🤝</div><div class="cap-name">协作能力</div><div class="cap-desc">跨角色沟通，有效推动问题闭环</div></div>
+          <div class="cap-item"><div class="cap-icon">📈</div><div class="cap-name">学习能力</div><div class="cap-desc">通过实习考核，完成身份转变</div></div>
+        </div>
+      </div>
+      <div style="margin-top: 20px;">
+        <div class="metrics-title">📋 终极衡量标准</div>
+        <div class="metric-list">
+          <div class="metric-item"><div class="metric-icon doing">◐</div><div class="metric-text">独立梳理业务全链路测试风险点，输出风险地图</div><div class="metric-status doing">进行中</div></div>
+          <div class="metric-item"><div class="metric-icon doing">◐</div><div class="metric-text">累计自动化用例 ≥ 80 个（阶段2: 30 + 阶段3: 50）</div><div class="metric-status doing">进行中</div></div>
+          <div class="metric-item"><div class="metric-icon doing">◐</div><div class="metric-text">独立主导 ≥ 2 个完整迭代，缺陷漏测率 ≤ 5%</div><div class="metric-status doing">进行中</div></div>
+          <div class="metric-item"><div class="metric-icon doing">◐</div><div class="metric-text">评审有效建议 ≥ 10 次，推动 ≥ 3 个跨团队问题闭环</div><div class="metric-status doing">进行中</div></div>
+          <div class="metric-item"><div class="metric-icon doing">◐</div><div class="metric-text">通过实习考核，评分达到团队优良水平</div><div class="metric-status doing">进行中</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="text-align: center; margin-top: 40px; color: #475569; font-size: 12px;">
+    <p>创建日期：2026-09-04 | 最后更新：2026-09-04 | 阶段1剩余 26 天</p>
+  </div>
+</div>
+</body>
+</html>

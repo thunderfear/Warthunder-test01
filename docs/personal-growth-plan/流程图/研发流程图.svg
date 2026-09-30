@@ -1,0 +1,146 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1400" font-family="Microsoft YaHei, SimHei, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#333"/>
+    </marker>
+    <marker id="arr-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#C62828"/>
+    </marker>
+  </defs>
+
+  <!-- 背景 -->
+  <rect width="800" height="1400" fill="#fff"/>
+
+  <!-- 标题 -->
+  <text x="400" y="40" text-anchor="middle" font-size="20" font-weight="bold" fill="#333">营销系统研发流程图</text>
+  <text x="400" y="65" text-anchor="middle" font-size="11" fill="#666">混合模式 | 迭代周期2周（复杂≤1月） | 上线窗口周二/四</text>
+
+  <!-- ===== 主流程 ===== -->
+
+  <!-- 1. 需求收集 -->
+  <rect x="280" y="100" width="240" height="50" rx="8" fill="#E0E0E0" stroke="#333" stroke-width="1.5"/>
+  <text x="400" y="122" text-anchor="middle" font-size="14" font-weight="bold" fill="#333">需求收集 / PRD</text>
+  <text x="400" y="140" text-anchor="middle" font-size="11" fill="#666">产品经理</text>
+  <line x1="400" y1="150" x2="400" y2="175" stroke="#333" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- 2. 需求评审 -->
+  <rect x="280" y="175" width="240" height="50" rx="8" fill="#E0E0E0" stroke="#333" stroke-width="1.5"/>
+  <text x="400" y="197" text-anchor="middle" font-size="14" font-weight="bold" fill="#333">需求评审</text>
+  <text x="400" y="215" text-anchor="middle" font-size="11" fill="#666">产品+开发+测试</text>
+  <line x1="400" y1="225" x2="400" y2="250" stroke="#333" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- 3. UI设计 + 技术方案 -->
+  <rect x="160" y="250" width="180" height="50" rx="8" fill="#E0E0E0" stroke="#333" stroke-width="1.5"/>
+  <text x="250" y="272" text-anchor="middle" font-size="13" font-weight="bold" fill="#333">UI 设计</text>
+  <text x="250" y="290" text-anchor="middle" font-size="11" fill="#666">UI/UX</text>
+
+  <rect x="460" y="250" width="180" height="50" rx="8" fill="#E0E0E0" stroke="#333" stroke-width="1.5"/>
+  <text x="550" y="272" text-anchor="middle" font-size="13" font-weight="bold" fill="#333">技术方案</text>
+  <text x="550" y="290" text-anchor="middle" font-size="11" fill="#666">开发+测试+产品</text>
+
+  <line x1="250" y1="300" x2="250" y2="330" stroke="#333" stroke-width="1.5"/>
+  <line x1="550" y1="300" x2="550" y2="330" stroke="#333" stroke-width="1.5"/>
+  <line x1="250" y1="330" x2="550" y2="330" stroke="#333" stroke-width="1.5"/>
+  <line x1="400" y1="330" x2="400" y2="355" stroke="#333" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- 4. 编码开发 -->
+  <rect x="280" y="355" width="240" height="50" rx="8" fill="#E0E0E0" stroke="#333" stroke-width="1.5"/>
+  <text x="400" y="377" text-anchor="middle" font-size="14" font-weight="bold" fill="#333">编码开发 + 自测</text>
+  <text x="400" y="395" text-anchor="middle" font-size="11" fill="#666">前后端开发</text>
+  <line x1="400" y1="405" x2="400" y2="430" stroke="#333" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- 5. 开发+测试Review -->
+  <rect x="280" y="430" width="240" height="50" rx="8" fill="#E0E0E0" stroke="#333" stroke-width="1.5"/>
+  <text x="400" y="452" text-anchor="middle" font-size="13" font-weight="bold" fill="#333">开发 + 测试 Review</text>
+  <text x="400" y="470" text-anchor="middle" font-size="11" fill="#666">提测前人工审查</text>
+  <line x1="400" y1="480" x2="400" y2="505" stroke="#333" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- 6. 提测 -->
+  <rect x="320" y="505" width="160" height="45" rx="8" fill="#E0E0E0" stroke="#333" stroke-width="1.5"/>
+  <text x="400" y="533" text-anchor="middle" font-size="14" font-weight="bold" fill="#333">提 测</text>
+  <line x1="400" y1="550" x2="400" y2="575" stroke="#333" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- 7. QA用AI工具Review -->
+  <rect x="280" y="575" width="240" height="50" rx="8" fill="#E0E0E0" stroke="#333" stroke-width="1.5"/>
+  <text x="400" y="597" text-anchor="middle" font-size="13" font-weight="bold" fill="#333">QA 用 AI 工具 Review</text>
+  <text x="400" y="615" text-anchor="middle" font-size="11" fill="#666">提测后AI辅助审查</text>
+  <line x1="400" y1="625" x2="400" y2="650" stroke="#333" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- 8. 冒烟测试（菱形） -->
+  <polygon points="400,650 500,700 400,750 300,700" fill="#E0E0E0" stroke="#333" stroke-width="1.5"/>
+  <text x="400" y="695" text-anchor="middle" font-size="13" font-weight="bold" fill="#333">冒烟测试</text>
+  <text x="400" y="715" text-anchor="middle" font-size="11" fill="#666">是否通过？</text>
+
+  <!-- 不通过 → 打回 -->
+  <line x1="300" y1="700" x2="180" y2="700" stroke="#C62828" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <line x1="180" y1="700" x2="180" y2="380" stroke="#C62828" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <line x1="180" y1="380" x2="280" y2="380" stroke="#C62828" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arr-red)"/>
+  <text x="240" y="685" text-anchor="middle" font-size="11" fill="#C62828">不通过</text>
+  <text x="165" y="540" text-anchor="middle" font-size="10" fill="#C62828" transform="rotate(-90,165,540)">打回修复</text>
+
+  <!-- 通过 → 继续 -->
+  <line x1="400" y1="750" x2="400" y2="780" stroke="#333" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="440" y="770" font-size="11" fill="#333">通过</text>
+
+  <!-- 9. 全面测试 -->
+  <rect x="280" y="780" width="240" height="50" rx="8" fill="#E0E0E0" stroke="#333" stroke-width="1.5"/>
+  <text x="400" y="802" text-anchor="middle" font-size="14" font-weight="bold" fill="#333">全面测试</text>
+  <text x="400" y="820" text-anchor="middle" font-size="11" fill="#666">功能/回归/异常场景</text>
+
+  <!-- Bug修复循环 -->
+  <line x1="520" y1="805" x2="620" y2="805" stroke="#C62828" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <line x1="620" y1="805" x2="620" y2="380" stroke="#C62828" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <line x1="620" y1="380" x2="520" y2="380" stroke="#C62828" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arr-red)"/>
+  <text x="635" y="590" text-anchor="middle" font-size="10" fill="#C62828" transform="rotate(90,635,590)">Bug修复循环</text>
+
+  <line x1="400" y1="830" x2="400" y2="855" stroke="#333" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- 10. 预发布验证（菱形） -->
+  <polygon points="400,855 500,900 400,945 300,900" fill="#E0E0E0" stroke="#333" stroke-width="1.5"/>
+  <text x="400" y="895" text-anchor="middle" font-size="13" font-weight="bold" fill="#333">预发布验证</text>
+  <text x="400" y="915" text-anchor="middle" font-size="11" fill="#666">是否通过？</text>
+
+  <!-- 不通过 → 打回全面测试 -->
+  <line x1="300" y1="900" x2="220" y2="900" stroke="#C62828" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <line x1="220" y1="900" x2="220" y2="805" stroke="#C62828" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <line x1="220" y1="805" x2="280" y2="805" stroke="#C62828" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arr-red)"/>
+  <text x="260" y="885" text-anchor="middle" font-size="11" fill="#C62828">不通过</text>
+
+  <!-- 通过 -->
+  <line x1="400" y1="945" x2="400" y2="975" stroke="#333" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="440" y="965" font-size="11" fill="#333">通过</text>
+
+  <!-- 11. 测试报告 -->
+  <rect x="280" y="975" width="240" height="50" rx="8" fill="#E0E0E0" stroke="#333" stroke-width="1.5"/>
+  <text x="400" y="997" text-anchor="middle" font-size="14" font-weight="bold" fill="#333">输出测试报告</text>
+  <text x="400" y="1015" text-anchor="middle" font-size="11" fill="#666">测试(QA)</text>
+  <line x1="400" y1="1025" x2="400" y2="1050" stroke="#333" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- 12. CAB评审/上线 -->
+  <rect x="280" y="1050" width="240" height="55" rx="8" fill="#E0E0E0" stroke="#333" stroke-width="1.5"/>
+  <text x="400" y="1075" text-anchor="middle" font-size="14" font-weight="bold" fill="#333">CAB 评审 / 上线</text>
+  <text x="400" y="1095" text-anchor="middle" font-size="11" fill="#666">周二/周四 | CAB工单+会议</text>
+
+  <!-- 需求变更回流 -->
+  <line x1="520" y1="200" x2="640" y2="200" stroke="#666" stroke-width="1" stroke-dasharray="5,3"/>
+  <line x1="640" y1="200" x2="640" y2="125" stroke="#666" stroke-width="1" stroke-dasharray="5,3"/>
+  <line x1="640" y1="125" x2="520" y2="125" stroke="#666" stroke-width="1" stroke-dasharray="5,3" marker-end="url(#arr)"/>
+  <text x="655" y="165" font-size="10" fill="#666">需求变更</text>
+  <text x="655" y="178" font-size="9" fill="#666">重新评审→修PRD→修排期</text>
+
+  <!-- ===== 底部说明 ===== -->
+  <text x="50" y="1160" font-size="13" font-weight="bold" fill="#333">说明：</text>
+  <text x="50" y="1185" font-size="11" fill="#666">1. Code Review：正常项目提测前开发+测试一起Review；提测后QA用AI工具Review；重大项目上线前开发最终Review</text>
+  <text x="50" y="1210" font-size="11" fill="#666">2. 迭代周期：正常2周一个Sprint，复杂需求最长不超过1个月</text>
+  <text x="50" y="1235" font-size="11" fill="#666">3. 上线窗口：固定周二/周四，需走CAB工单+线上评审会议；紧急发布也需拉会</text>
+  <text x="50" y="1260" font-size="11" fill="#666">4. Bug管理工具：内部PMP</text>
+
+  <!-- 图例 -->
+  <text x="50" y="1310" font-size="13" font-weight="bold" fill="#333">图例：</text>
+  <line x1="50" y1="1330" x2="100" y2="1330" stroke="#333" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="110" y="1334" font-size="11" fill="#333">主流程</text>
+  <line x1="200" y1="1330" x2="250" y2="1330" stroke="#C62828" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arr-red)"/>
+  <text x="260" y="1334" font-size="11" fill="#C62828">打回/异常/循环</text>
+  <line x1="400" y1="1330" x2="450" y2="1330" stroke="#666" stroke-width="1" stroke-dasharray="5,3" marker-end="url(#arr)"/>
+  <text x="460" y="1334" font-size="11" fill="#666">需求变更回流</text>
+</svg>

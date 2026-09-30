@@ -1,0 +1,49 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Battle {
+  id            String   @id @default(cuid())
+  playerName    String
+  playerVehicle String
+  enemyVehicle  String
+  mapName       String
+  result        String
+  createdAt     DateTime @default(now())
+  hits          Hit[]
+}
+
+model Hit {
+  id                String  @id @default(cuid())
+  battleId          String
+  battle            Battle  @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  seq               Int
+  timeOffset        Int
+  ammoId            String
+  caliber           Int
+  distance          Int
+  impactAngle       Float
+  effectiveThickness Float
+  shellPen          Float
+  zoneKey           String?
+  zoneLabel         String?
+  armorType         String?
+  category          String?
+  penetrated        Boolean
+  ricochet          Boolean
+  missed            Boolean
+  postPenDamage     Int
+  crewKilled        Boolean
+  armorNeutralized  Boolean @default(false)
+  resultText        String
+  postEffectDetails String?   // JSON string of PostEffectDetail
+  chainEvents       String?   // JSON string of SpecialEvent[]
+  vehicleState      String?   // vehicle state after this hit
+  overpressureKPa   Float?    // overpressure value
+  crewKilledList    String?   // JSON string of crew killed list
+}

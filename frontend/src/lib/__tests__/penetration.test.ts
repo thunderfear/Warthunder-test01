@@ -1,0 +1,450 @@
+import { describe, it, expect } from 'vitest';
+import { getAmmo } from '../../data/ammo';
+import type { Zone, ArmorType, ZoneCategory } from '../../data/vehicle';
+import { evaluateHit, evaluateHit3D, penAt, type Armor3D } from '../penetration';
+import { APStrategy, APHEStrategy, HEATStrategy, APCRStrategy, HEStrategy } from '../penetration';
+import type { PostEffectContext } from '../penetration';
+
+function makeZone(over: Partial<Zone>): Zone {
+  return {
+    key: 'z',
+    label: '测试区',
+    category: 'armor' as ZoneCategory,
+    armorType: 'RHA' as ArmorType,
+    nominalThickness: 100,
+    slope: 0,
+    rect: { x: 0, y: 0, w: 10, h: 10 },
+    labelPos: { x: 5, y: 5 },
+    damageWeight: 30,
+    ...over,
+  };
+}
+
+describe('penAt', () => {
+  it('在穿深曲线上线性插值', () => {
+    const ap = getAmmo('AP'); // 100m=120, 500m=100
+    const p = penAt(ap, 300);
+    expect(p).toBeCloseTo(110, 0);
+  });
+  it('超出曲线端点取端点值', () => {
+    const ap = getAmmo('AP');
+    expect(penAt(ap, 10)).toBe(120);
+    expect(penAt(ap, 99999)).toBe(50);
+  });
+});
+
+describe('有效装甲厚度（余弦斜率 + 转正）', () => {
+  it('垂直钢板（slope=0）有效厚度=标称厚度', () => {
+    const ap = getAmmo('AP');
+    const z = makeZone({ nominalThickness: 100, slope: 0 });
+    const r = evaluateHit({ ammo: ap, zone: z, distance: 100 });
+    expect(r.effectiveThickness).toBeCloseTo(100, 0);
+  });
+  it('倾斜装甲增大有效厚度', () => {
+    const ap = getAmmo('AP');
+    const z = makeZone({ nominalThickness: 100, slope: 30 });
+    const r = evaluateHit({ ammo: ap, zone: z, distance: 100 });
+    // 100 / cos(30°) ≈ 115.5
+    expect(r.effectiveThickness).toBeCloseTo(115.5, 0);
+  });
+  it('转正角压平入射角', () => {
+    const aphe = getAmmo('APHE'); // 转正 3°
+    const z = makeZone({ nominalThickness: 100, slope: 30 });
+    const r = evaluateHit({ ammo: aphe, zone: z, distance: 100 });
+    // (30-3)=27°, 100/cos27 ≈ 112.3
+    expect(r.effectiveThickness).toBeCloseTo(112.3, 0);
+  });
+});
+
+describe('穿透 / 跳弹 / 边界', () => {
+  it('穿深足够则击穿', () => {
+    const ap = getAmmo('AP'); // 100m=120
+    const z = makeZone({ nominalThickness: 80, slope: 0 });
+    const r = evaluateHit({ ammo: ap, zone: z, distance: 100 });
+    expect(r.penetrated).toBe(true);
+    expect(r.ricochet).toBe(false);
+  });
+  it('入射角过大跳弹', () => {
+    const ap = getAmmo('AP'); // 阈值 70°
+    const z = makeZone({ nominalThickness: 50, slope: 75 }); // 入射角≈75° > 70°
+    const r = evaluateHit({ ammo: ap, zone: z, distance: 100 });
+    expect(r.ricochet).toBe(true);
+    expect(r.penetrated).toBe(false);
+  });
+  it('入射角接近90°必定跳弹（cosθ<0.01 边界）', () => {
+    const ap = getAmmo('AP');
+    const z = makeZone({ nominalThickness: 50, slope: 90 });
+    const r = evaluateHit({ ammo: ap, zone: z, distance: 100 });
+    expect(r.ricochet).toBe(true);
+    expect(r.penetrated).toBe(false);
+  });
+  it('命中载具之外=未命中', () => {
+    const ap = getAmmo('AP');
+    const r = evaluateHit({ ammo: ap, zone: null, distance: 500 });
+    expect(r.missed).toBe(true);
+    expect(r.penetrated).toBe(false);
+  });
+  it('判定顺序修正：跳弹优先于穿透（大角度+高穿深应跳弹）', () => {
+    // AP 100m 穿深 120mm；10mm 装甲 slope=75° → 有效厚度 ≈ 38.6mm，穿深绰绰有余
+    // 但入射角 75°+弹道俯角 > 阈值 70° → 符合 WT 语义应判跳弹而非击穿
+    const ap = getAmmo('AP');
+    const z = makeZone({ nominalThickness: 10, slope: 75 });
+    const r = evaluateHit({ ammo: ap, zone: z, distance: 100 });
+    expect(r.ricochet).toBe(true);
+    expect(r.penetrated).toBe(false);
+    expect(r.postPenDamage).toBe(0);
+  });
+});
+
+describe('装甲类型差异化', () => {
+  it('ERA 完全化解 HEAT', () => {
+    const heat = getAmmo('HEAT');
+    const z = makeZone({ armorType: 'ERA' });
+    const r = evaluateHit({ ammo: heat, zone: z, distance: 500 });
+    expect(r.armorNeutralized).toBe(true);
+    expect(r.penetrated).toBe(false);
+  });
+  it('ERA 对动能弹削减约 30% 穿深', () => {
+    const ap = getAmmo('AP');
+    const z = makeZone({ armorType: 'ERA' });
+    const r = evaluateHit({ ammo: ap, zone: z, distance: 100 });
+    expect(r.shellPen).toBeCloseTo(penAt(ap, 100) * 0.7, 2);
+  });
+  it('spaced 装甲降低 HEAT 后效', () => {
+    const heat = getAmmo('HEAT');
+    const zBase = makeZone({ armorType: 'RHA', category: 'module', nominalThickness: 30 });
+    const zSpaced = makeZone({ armorType: 'spaced', category: 'module', nominalThickness: 30 });
+    const rBase = evaluateHit({ ammo: heat, zone: zBase, distance: 300 });
+    const rSpaced = evaluateHit({ ammo: heat, zone: zSpaced, distance: 300 });
+    expect(rSpaced.postPenDamage).toBeLessThan(rBase.postPenDamage);
+  });
+});
+
+describe('后效', () => {
+  it('HE 高爆弹命中乘员即杀伤', () => {
+    const he = getAmmo('HE');
+    const z = makeZone({ category: 'crew' });
+    const r = evaluateHit({ ammo: he, zone: z, distance: 400 });
+    expect(r.penetrated).toBe(true);
+    expect(r.crewKilled).toBe(true);
+    expect(r.postPenDamage).toBeGreaterThanOrEqual(80);
+  });
+});
+
+// ─── 3D 命中评估测试 ───
+
+function makeArmor3D(over: Partial<Armor3D> = {}): Armor3D {
+  return {
+    nominalThickness: 100,
+    normalVector: { x: 1, y: 0, z: 0 }, // 默认法线朝前（垂直命中）
+    armorType: 'RHA',
+    category: 'armor',
+    label: '测试装甲',
+    ...over,
+  };
+}
+
+describe('evaluateHit3D 基本组合', () => {
+  const ammoTypes = ['AP', 'APHE', 'HEAT', 'APCR', 'HE'] as const;
+  const armorTypes: { type: ArmorType; thickness: number; label: string }[] = [
+    { type: 'RHA', thickness: 80, label: 'RHA 80mm' },
+    { type: 'spaced', thickness: 30, label: 'spaced 30mm' },
+    { type: 'composite', thickness: 100, label: 'composite 100mm' },
+    { type: 'ERA', thickness: 80, label: 'ERA 80mm' },
+  ];
+
+  for (const ammoId of ammoTypes) {
+    for (const armorDef of armorTypes) {
+      it(`${ammoId} vs ${armorDef.label} 应返回有效结果`, () => {
+        const ammo = getAmmo(ammoId);
+        const armor = makeArmor3D({
+          armorType: armorDef.type,
+          nominalThickness: armorDef.thickness,
+          category: 'armor',
+        });
+        const r = evaluateHit3D({
+          ammo,
+          armor,
+          impactPoint: { x: 500, y: 0, z: 0 },
+          shotDirection: { x: 1, y: 0, z: 0 },
+          distance: 100,
+        });
+        expect(r.missed).toBe(false);
+        expect(r.effectiveThickness).toBeGreaterThan(0);
+        expect(r.shellPen).toBeGreaterThanOrEqual(0);
+        expect(typeof r.penetrated).toBe('boolean');
+        expect(typeof r.ricochet).toBe('boolean');
+        expect(r.postPenDamage).toBeGreaterThanOrEqual(0);
+        expect(r.resultText).toBeTruthy();
+      });
+    }
+  }
+});
+
+describe('evaluateHit3D 临界值测试', () => {
+  it('刚好穿透：穿深 >= 有效厚度', () => {
+    const ap = getAmmo('AP'); // 100m=120mm
+    const armor = makeArmor3D({ nominalThickness: 100, armorType: 'RHA' });
+    const r = evaluateHit3D({
+      ammo: ap,
+      armor,
+      impactPoint: { x: 100, y: 0, z: 0 },
+      shotDirection: { x: 1, y: 0, z: 0 },
+      distance: 100,
+    });
+    expect(r.penetrated).toBe(true);
+    expect(r.ricochet).toBe(false);
+  });
+
+  it('刚好跳弹：入射角超过阈值', () => {
+    const ap = getAmmo('AP'); // 跳弹阈值 70°
+    // 法线几乎平行于射击方向，即入射角接近90°
+    const armor = makeArmor3D({
+      nominalThickness: 50,
+      normalVector: { x: 0.01, y: 1, z: 0 }, // 法线几乎朝右，装甲面几乎平行于弹道
+    });
+    const r = evaluateHit3D({
+      ammo: ap,
+      armor,
+      impactPoint: { x: 100, y: 0, z: 0 },
+      shotDirection: { x: 1, y: 0, z: 0 },
+      distance: 100,
+    });
+    expect(r.ricochet).toBe(true);
+    expect(r.penetrated).toBe(false);
+  });
+
+  it('判定顺序修正：跳弹优先于穿透（3D 大角度+高穿深应跳弹）', () => {
+    // AP 100m 穿深 120mm；10mm 装甲法线偏转 75° → 有效厚度 ≈ 38.6mm，穿深绰绰有余
+    // 但入射角 75° > 阈值 70° → 符合 WT 语义应判跳弹而非击穿
+    const ap = getAmmo('AP');
+    const angle75 = (75 * Math.PI) / 180;
+    const armor = makeArmor3D({
+      nominalThickness: 10,
+      normalVector: { x: Math.cos(angle75), y: Math.sin(angle75), z: 0 },
+    });
+    const r = evaluateHit3D({
+      ammo: ap,
+      armor,
+      impactPoint: { x: 100, y: 0, z: 0 },
+      shotDirection: { x: 1, y: 0, z: 0 },
+      distance: 100,
+    });
+    expect(r.ricochet).toBe(true);
+    expect(r.penetrated).toBe(false);
+    expect(r.postPenDamage).toBe(0);
+    expect(r.ricochetDirection).not.toBeNull(); // 跳弹应给出 3D 反弹方向
+  });
+
+  it('HE 弹不受判定顺序影响：大角度命中仍爆破（不跳弹）', () => {
+    // HE 跳弹阈值 999 且 postPen='blast' 最优先 → 85° 大角度命中仍引爆
+    const he = getAmmo('HE');
+    const angle85 = (85 * Math.PI) / 180;
+    const armor = makeArmor3D({
+      nominalThickness: 100,
+      normalVector: { x: Math.cos(angle85), y: Math.sin(angle85), z: 0 },
+      category: 'crew',
+    });
+    const r = evaluateHit3D({
+      ammo: he,
+      armor,
+      impactPoint: { x: 100, y: 0, z: 0 },
+      shotDirection: { x: 1, y: 0, z: 0 },
+      distance: 400,
+    });
+    expect(r.penetrated).toBe(true);
+    expect(r.ricochet).toBe(false);
+    expect(r.postPenDamage).toBeGreaterThan(0);
+  });
+});
+
+describe('evaluateHit3D 法向量影响', () => {
+  it('垂直命中（法线与弹道平行）入射角最小', () => {
+    const ap = getAmmo('AP');
+    const armor = makeArmor3D({
+      nominalThickness: 100,
+      normalVector: { x: 1, y: 0, z: 0 }, // 法线朝前，垂直命中
+    });
+    const r = evaluateHit3D({
+      ammo: ap,
+      armor,
+      impactPoint: { x: 100, y: 0, z: 0 },
+      shotDirection: { x: 1, y: 0, z: 0 },
+      distance: 100,
+    });
+    // 垂直命中时入射角应接近0°
+    expect(r.impactAngleDeg).toBeLessThan(5);
+    expect(r.effectiveThickness).toBeCloseTo(100, 0);
+  });
+
+  it('斜角命中（法线偏转）入射角更大', () => {
+    const ap = getAmmo('AP');
+    // 法线偏转30°（相当于装甲倾斜30°）
+    const angle30 = (30 * Math.PI) / 180;
+    const armor = makeArmor3D({
+      nominalThickness: 100,
+      normalVector: { x: Math.cos(angle30), y: Math.sin(angle30), z: 0 },
+    });
+    const r = evaluateHit3D({
+      ammo: ap,
+      armor,
+      impactPoint: { x: 100, y: 0, z: 0 },
+      shotDirection: { x: 1, y: 0, z: 0 },
+      distance: 100,
+    });
+    // 斜角命中时入射角应大于0°
+    expect(r.impactAngleDeg).toBeGreaterThan(20);
+    expect(r.effectiveThickness).toBeGreaterThan(100);
+  });
+
+  it('未命中返回 missed=true', () => {
+    const ap = getAmmo('AP');
+    const r = evaluateHit3D({
+      ammo: ap,
+      armor: null,
+      impactPoint: { x: 500, y: 100, z: 0 },
+      shotDirection: { x: 1, y: 0, z: 0 },
+      distance: 500,
+    });
+    expect(r.missed).toBe(true);
+    expect(r.penetrated).toBe(false);
+    expect(r.postPenDamage).toBe(0);
+  });
+
+  it('ERA 化解 HEAT（3D）', () => {
+    const heat = getAmmo('HEAT');
+    const armor = makeArmor3D({ armorType: 'ERA', nominalThickness: 80 });
+    const r = evaluateHit3D({
+      ammo: heat,
+      armor,
+      impactPoint: { x: 100, y: 0, z: 0 },
+      shotDirection: { x: 1, y: 0, z: 0 },
+      distance: 500,
+    });
+    expect(r.armorNeutralized).toBe(true);
+    expect(r.penetrated).toBe(false);
+  });
+});
+
+// ─── 5种后效策略验证 ───
+
+function makeTestZone(category: ZoneCategory = 'module'): Zone {
+  return makeZone({
+    category,
+    nominalThickness: 10,  // 很薄，确保击穿
+    slope: 0,
+    adjacentZones: ['adj1', 'adj2'],
+  });
+}
+
+function makeAdjacentMap(): Map<string, string[]> {
+  return new Map<string, string[]>([
+    ['z', ['adj1', 'adj2']],
+    ['adj1', ['z', 'adj2']],
+    ['adj2', ['z', 'adj1']],
+  ]);
+}
+
+describe('5种后效策略 postEffectDetails 验证', () => {
+  it('AP策略击穿后 spallCone.angleDeg ≈ 10', () => {
+    const ap = getAmmo('AP');
+    const zone = makeTestZone('module');
+    const strategy = new APStrategy();
+    const ctx: PostEffectContext = { ammo: ap, zone, penetrated: true, adjacentZoneMap: makeAdjacentMap() };
+    const result = strategy.compute(ctx);
+    expect(result.postEffectDetails).toBeDefined();
+    expect(result.postEffectDetails!.spallCone).toBeDefined();
+    expect(result.postEffectDetails!.spallCone!.angleDeg).toBe(10);
+  });
+
+  it('APHE策略击穿后 spallCone.angleDeg 在 30-45 范围', () => {
+    const aphe = getAmmo('APHE');
+    const zone = makeTestZone('module');
+    const strategy = new APHEStrategy();
+    const ctx: PostEffectContext = { ammo: aphe, zone, penetrated: true, adjacentZoneMap: makeAdjacentMap() };
+    const result = strategy.compute(ctx);
+    expect(result.postEffectDetails).toBeDefined();
+    const angle = result.postEffectDetails!.spallCone!.angleDeg;
+    expect(angle).toBeGreaterThanOrEqual(30);
+    expect(angle).toBeLessThanOrEqual(45);
+  });
+
+  it('HEAT策略击穿后 spallCone.angleDeg ≈ 15', () => {
+    const heat = getAmmo('HEAT');
+    const zone = makeTestZone('module');
+    const strategy = new HEATStrategy();
+    const ctx: PostEffectContext = { ammo: heat, zone, penetrated: true, adjacentZoneMap: makeAdjacentMap() };
+    const result = strategy.compute(ctx);
+    expect(result.postEffectDetails).toBeDefined();
+    expect(result.postEffectDetails!.spallCone!.angleDeg).toBe(15);
+  });
+
+  it('APCR策略击穿后 spallCone.angleDeg ≈ 5', () => {
+    const apcr = getAmmo('APCR');
+    const zone = makeTestZone('module');
+    const strategy = new APCRStrategy();
+    const ctx: PostEffectContext = { ammo: apcr, zone, penetrated: true, adjacentZoneMap: makeAdjacentMap() };
+    const result = strategy.compute(ctx);
+    expect(result.postEffectDetails).toBeDefined();
+    expect(result.postEffectDetails!.spallCone!.angleDeg).toBe(5);
+  });
+
+  it('HE策略击穿后 splashZones 非空', () => {
+    const he = getAmmo('HE');
+    const zone = makeTestZone('module');
+    const strategy = new HEStrategy();
+    const ctx: PostEffectContext = { ammo: he, zone, penetrated: true, adjacentZoneMap: makeAdjacentMap() };
+    const result = strategy.compute(ctx);
+    expect(result.postEffectDetails).toBeDefined();
+    expect(result.postEffectDetails!.splashZones).toBeDefined();
+    expect(result.postEffectDetails!.splashZones!.length).toBeGreaterThan(0);
+  });
+});
+
+// ─── 超压计算验证（通过策略 + evaluateHit）───
+
+describe('后效超压计算验证', () => {
+  it('APHE 大装药命中 → overpressureKPa > 0', () => {
+    const aphe = getAmmo('APHE');
+    const zone = makeTestZone('module');
+    const strategy = new APHEStrategy();
+    const ctx: PostEffectContext = { ammo: aphe, zone, penetrated: true, adjacentZoneMap: makeAdjacentMap() };
+    const result = strategy.compute(ctx);
+    // APHE 88mm: tntKg = 88^3 * 0.0000003 ≈ 0.205kg ≥ 0.17 → 计算超压
+    expect(result.postEffectDetails!.overpressureKPa).toBeGreaterThan(0);
+  });
+
+  it('HE 命中 → overpressureKPa 更高', () => {
+    const he = getAmmo('HE');
+    const zone = makeTestZone('module');
+    const strategy = new HEStrategy();
+    const ctx: PostEffectContext = { ammo: he, zone, penetrated: true, adjacentZoneMap: makeAdjacentMap() };
+    const result = strategy.compute(ctx);
+    // HE 88mm: tntKg = 88^3 * 0.000005 ≈ 3.4kg → 高超压
+    expect(result.postEffectDetails!.overpressureKPa).toBeGreaterThan(0);
+
+    // HE 超压应远高于 APHE
+    const aphe = getAmmo('APHE');
+    const apheStrategy = new APHEStrategy();
+    const apheResult = apheStrategy.compute({ ammo: aphe, zone, penetrated: true, adjacentZoneMap: makeAdjacentMap() });
+    expect(result.postEffectDetails!.overpressureKPa).toBeGreaterThan(apheResult.postEffectDetails!.overpressureKPa!);
+  });
+
+  it('evaluateHit 集成测试：APHE 击穿后返回 postEffectDetails', () => {
+    const aphe = getAmmo('APHE');
+    const z = makeZone({ category: 'module', nominalThickness: 30, slope: 0 });
+    const r = evaluateHit({ ammo: aphe, zone: z, distance: 100 });
+    expect(r.penetrated).toBe(true);
+    expect(r.postEffectDetails).toBeDefined();
+    expect(r.postEffectDetails!.spallCone).toBeDefined();
+  });
+
+  it('evaluateHit 集成测试：HE 击穿后返回 splashZones', () => {
+    const he = getAmmo('HE');
+    const z = makeZone({ category: 'module', nominalThickness: 30, slope: 0 });
+    const r = evaluateHit({ ammo: he, zone: z, distance: 400 });
+    expect(r.penetrated).toBe(true);
+    expect(r.postEffectDetails).toBeDefined();
+    expect(r.postEffectDetails!.splashZones).toBeDefined();
+  });
+});

@@ -1,0 +1,352 @@
+import { useState, lazy, Suspense, useMemo } from 'react';
+import VehicleSchematic from './VehicleSchematic';
+import ErrorBoundary from './ErrorBoundary';
+import { getAmmo } from '../data/ammo';
+import { VEHICLE, getZone } from '../data/vehicle';
+import { VEHICLE_3D, getZone3D } from '../data/vehicle3d';
+import { synthSceneTrajectory } from '../lib/HitSimulator';
+import { useBattleStore } from '../store/battleStore';
+import type { PenetrationResult3D } from '../lib/penetration';
+import type { Vector3 } from '../lib/ballistics';
+import type { SpecialEvent } from '../lib/chainReactions';
+
+const BattleScene3D = lazy(() => import('../components3d/BattleScene3D'));
+
+interface Props {
+  onClose: () => void;
+}
+
+function Scene3DFallback() {
+  return (
+    <div style={{
+      width: '100%', height: '100%', minHeight: 300,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: '#0d1117', color: '#6f8499', fontSize: 13,
+    }}>
+      加载3D场景…
+    </div>
+  );
+}
+
+export default function HitAnalysisWindow({ onClose }: Props) {
+  const [replayToken, setReplayToken] = useState(0);
+  const { current, use3DView, replaySpeed, setReplaySpeed, toggleView, chainEvents, vehicleState, zoneDamage } = useBattleStore();
+
+  // 直接从 store 读取最新命中数据，确保每次开火后内容实时更新
+  if (!current) return null;
+  const hit = current;
+
+  const ammo = getAmmo(hit.ammoId);
+  const r = hit.result;
+
+  const zone = hit.zoneKey ? VEHICLE.zones.find((z) => z.key === hit.zoneKey) : null;
+  const to = zone
+    ? { x: zone.rect.x + zone.rect.w / 2, y: zone.rect.y + zone.rect.h / 2 }
+    : { x: 320, y: 200 };
+
+  // 将当前命中结果转换为 PenetrationResult3D（用于3D视图）
+  // 坐标系感知：3D 直线命中（simulateHit3DStraight，coordSpace='three'）已是 Three 场景坐标，
+  // 保留真实命中点与 ricochetDirection；否则维持原 2D 示意图伪坐标合成值（弹道坐标，行为不变），
+  // 并显式声明 'ballistic' 供渲染端（HitEffects）做坐标置换
+  const currentHitResult3D: PenetrationResult3D = useMemo(() => {
+    const r3d = r as PenetrationResult3D;
+    if (r3d.coordSpace === 'three' && r3d.impactPoint3D) {
+      return {
+        ...r,
+        impactPoint3D: r3d.impactPoint3D,
+        normalVector: r3d.normalVector ?? { x: 0, y: 0, z: 1 },
+        trueIncidentAngleDeg: r3d.trueIncidentAngleDeg ?? r.impactAngleDeg,
+        ricochetDirection: r3d.ricochetDirection ?? null,
+        coordSpace: 'three' as const,
+      };
+    }
+    return {
+      ...r,
+      impactPoint3D: { x: to.x / 50, y: to.y / 50, z: 0 },
+      normalVector: { x: 0, y: 0, z: 1 },
+      trueIncidentAngleDeg: r.impactAngleDeg,
+      ricochetDirection: r.ricochet ? { x: -1, y: 0.5, z: 0 } : null,
+      coordSpace: 'ballistic' as const,
+    };
+  }, [r, to]);
+
+  // 3D 视图显示弹道坐标系分流（C1 修复）：
+  // - 3D 直线命中（coordSpace='three'，simulateHit3DStraight 产生）：hit.trajectory 本就是
+  //   Three 场景坐标直线，直接使用；
+  // - 2D 命中（fireAtZone/fireRandom，弹道坐标米制抛物线 x∈[50,2000]）：不能直接当作
+  //   Three 场景坐标渲染（场景仅约 30 单位大、camera far=100，炮弹会飞出视锥被裁剪），
+  //   改为合成场景内直线（目标=被命中分区 collision.position）；
+  // - zoneKey 查不到分区时返回空数组（不渲染弹道，避免错误坐标渲染）
+  const displayTrajectory: Vector3[] = useMemo(() => {
+    if ((hit.result as PenetrationResult3D).coordSpace === 'three') {
+      return hit.trajectory ?? [];
+    }
+    const zone3d = hit.zoneKey ? getZone3D(hit.zoneKey) : undefined;
+    if (!zone3d) return [];
+    const [tx, ty, tz] = zone3d.collision.position;
+    return synthSceneTrajectory({ x: tx, y: ty, z: tz });
+  }, [hit]);
+
+  // 后效详情数据
+  const postDetails = hit.result.postEffectDetails;
+  const hasPostEffects = useMemo(() => {
+    if (!postDetails) return false;
+    return (postDetails.specialEvents && postDetails.specialEvents.length > 0)
+      || (postDetails.splashZones && postDetails.splashZones.length > 0)
+      || (postDetails.spallCone && postDetails.spallCone.fragments.length > 0)
+      || (chainEvents && chainEvents.length > 0)
+      || (postDetails.overpressureKPa && postDetails.overpressureKPa > 0);
+  }, [postDetails, chainEvents]);
+
+  // 特殊事件中文映射
+  const specialEventLabel = (ev: SpecialEvent): string => {
+    switch (ev.type) {
+      case 'engine_fire': return '发动机起火';
+      case 'engine_stall': return '发动机停车';
+      case 'fuel_fire': return '油箱起火';
+      case 'ammo_cookoff': return '弹药烘烤';
+      case 'ammo_detonation': return '弹药殉爆';
+      case 'gun_jam': return '火炮卡弹';
+      default: return (ev as any).type ?? 'unknown';
+    }
+  };
+
+  const specialEventDetail = (ev: SpecialEvent): string => {
+    switch (ev.type) {
+      case 'engine_fire': return `概率: ${Math.round((ev as any).probability * 100)}%`;
+      case 'fuel_fire': return `概率: ${Math.round((ev as any).probability * 100)}%`;
+      case 'ammo_cookoff': return `延迟: ${ev.delaySeconds}秒`;
+      case 'engine_stall': return ev.severity === 'full' ? '完全停车' : '部分损失';
+      default: return '';
+    }
+  };
+
+  // 载具状态中文
+  const vehicleStateLabel = (vs: string): string => {
+    switch (vs) {
+      case 'normal': return '正常';
+      case 'module_damaged': return '模块受损';
+      case 'engine_fire': return '发动机起火';
+      case 'fuel_fire': return '油箱起火';
+      case 'ammo_cookoff': return '弹药烘烤中';
+      case 'ammo_detonated': return '已殉爆';
+      case 'fuel_exploded': return '油箱已爆';
+      case 'destroyed': return '已摧毁';
+      default: return vs;
+    }
+  };
+
+  const verdictClass = r.missed
+    ? 'miss'
+    : r.armorNeutralized
+      ? 'neu'
+      : r.ricochet
+        ? 'ric'
+        : r.penetrated
+          ? 'pen'
+          : 'miss';
+  const verdictText = r.missed
+    ? '未命中'
+    : r.armorNeutralized
+      ? '装甲失效'
+      : r.ricochet
+        ? '跳弹'
+        : r.penetrated
+          ? '击穿'
+          : '未击穿';
+
+  const from = { x: 624, y: 100 };
+
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="analysis" onClick={(e) => e.stopPropagation()} style={{ position: 'relative' }}>
+        <div className="close-x" onClick={onClose}>
+          ×
+        </div>
+        <div className="a-left">
+          <button className="view-toggle" onClick={toggleView} style={{ position: 'relative', top: 0, right: 0, marginBottom: 8 }}>
+            {use3DView ? '3D' : '2D'}
+          </button>
+
+          {use3DView ? (
+            <div className="canvas-container" style={{ minHeight: 300 }}>
+              <ErrorBoundary>
+                <Suspense fallback={<Scene3DFallback />}>
+                  <BattleScene3D
+                    vehicle={VEHICLE_3D}
+                    straightTrajectory={displayTrajectory}
+                    hitResults={[currentHitResult3D]}
+                    zoneDamage={zoneDamage}
+                    cameraMode="free"
+                    replayToken={replayToken}
+                    enableProjectileBreak
+                  />
+                </Suspense>
+              </ErrorBoundary>
+            </div>
+          ) : (
+            <VehicleSchematic
+              hits={[hit]}
+              highlightKey={hit.zoneKey}
+              replay={
+                replayToken > 0
+                  ? { token: replayToken, from, to }
+                  : null
+              }
+            />
+          )}
+
+          <div className="replay-controls">
+            <button className="btn btn-primary" onClick={() => setReplayToken((t) => t + 1)}>
+              ▶ 回放
+            </button>
+            <button className="btn" onClick={() => setReplaySpeed(Math.max(0.25, replaySpeed - 0.25))}>
+              −
+            </button>
+            <span className="speed-label">{replaySpeed}x</span>
+            <button className="btn" onClick={() => setReplaySpeed(Math.min(4, replaySpeed + 0.25))}>
+              +
+            </button>
+          </div>
+        </div>
+        <div className="a-right">
+          <div className={`verdict ${verdictClass}`}>{verdictText}</div>
+          <div className="result-text">{r.resultText}</div>
+
+          <div className="panel-title">弹道与穿甲对照</div>
+          <div className="kv">
+            <span>弹药</span>
+            <span>
+              {ammo.caliber}mm {ammo.name}
+            </span>
+          </div>
+          <div className="kv">
+            <span>交战距离</span>
+            <span>{hit.distance} m</span>
+          </div>
+          <div className="kv">
+            <span>入射角（含倾角）</span>
+            <span>{r.impactAngleDeg.toFixed(1)}°</span>
+          </div>
+          <div className="kv">
+            <span>有效装甲厚度</span>
+            <span>{r.effectiveThickness.toFixed(0)} mm</span>
+          </div>
+          <div className="kv">
+            <span>弹丸穿深</span>
+            <span>{r.shellPen.toFixed(0)} mm</span>
+          </div>
+          <div className="kv">
+            <span>本发损伤</span>
+            <span>{r.postPenDamage}%</span>
+          </div>
+          <div className="kv">
+            <span>乘员战损</span>
+            <span>{r.crewKilled ? '是' : '否'}</span>
+          </div>
+
+          {/* ─── 后效详情区块 ─── */}
+          {hasPostEffects && (
+            <>
+              <div className="panel-title" style={{ marginTop: 12 }}>━━━ 后效详情 ━━━</div>
+
+              {/* 连锁事件 */}
+              {chainEvents.length > 0 && (
+                <>
+                  <div className="kv" style={{ marginBottom: 2 }}>
+                    <span style={{ color: '#ff8800', fontWeight: 'bold' }}>连锁事件</span>
+                    <span></span>
+                  </div>
+                  {chainEvents.map((ev, i) => (
+                    <div className="kv" key={i} style={{ paddingLeft: 8 }}>
+                      <span style={{ color: '#ccaa66' }}>• {specialEventLabel(ev)}</span>
+                      <span style={{ color: '#88aacc' }}>{specialEventDetail(ev)}</span>
+                    </div>
+                  ))}
+                </>
+              )}
+
+              {/* 受影响分区 */}
+              {postDetails?.splashZones && postDetails.splashZones.length > 0 && (
+                <>
+                  <div className="kv" style={{ marginTop: 6, marginBottom: 2 }}>
+                    <span style={{ color: '#ff8800', fontWeight: 'bold' }}>受影响分区</span>
+                    <span></span>
+                  </div>
+                  {postDetails.splashZones.map((sz, i) => {
+                    const z = getZone(sz.zoneKey);
+                    return (
+                      <div className="kv" key={i} style={{ paddingLeft: 8 }}>
+                        <span style={{ color: '#ccaa66' }}>• {z?.label ?? sz.zoneKey}</span>
+                        <span style={{ color: '#88aacc' }}>{sz.damage}% 溅射伤害</span>
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+
+              {/* 破片锥溅射 */}
+              {postDetails?.spallCone && postDetails.spallCone.fragments.length > 0 && (
+                <>
+                  <div className="kv" style={{ marginTop: 6, marginBottom: 2 }}>
+                    <span style={{ color: '#ff8800', fontWeight: 'bold' }}>破片溅射</span>
+                    <span style={{ color: '#88aacc' }}>{postDetails.spallCone.fragmentCount}片 {postDetails.spallCone.angleDeg}°锥</span>
+                  </div>
+                  {postDetails.spallCone.fragments.slice(0, 5).map((f, i) => {
+                    const z = getZone(f.zoneKey);
+                    return (
+                      <div className="kv" key={i} style={{ paddingLeft: 8 }}>
+                        <span style={{ color: '#ccaa66' }}>• {z?.label ?? f.zoneKey}</span>
+                        <span style={{ color: '#88aacc' }}>{f.damage}% 破片伤害</span>
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+
+              {/* 乘员状态 */}
+              {(r.crewKilled || (postDetails?.overpressureKPa && postDetails.overpressureKPa > 0)) && (
+                <>
+                  <div className="kv" style={{ marginTop: 6, marginBottom: 2 }}>
+                    <span style={{ color: '#ff8800', fontWeight: 'bold' }}>乘员状态</span>
+                    <span></span>
+                  </div>
+                  {zone?.crewMembers?.map((member, i) => (
+                    <div className="kv" key={i} style={{ paddingLeft: 8 }}>
+                      <span style={{ color: '#ccaa66' }}>• {member}</span>
+                      <span style={{ color: r.crewKilled ? '#ff4444' : '#88cc88' }}>
+                        {r.crewKilled ? '阵亡 (破片)' : '存活'}
+                      </span>
+                    </div>
+                  ))}
+                  {postDetails?.overpressureKPa && postDetails.overpressureKPa > 0 && (
+                    <div className="kv" style={{ paddingLeft: 8 }}>
+                      <span style={{ color: '#ccaa66' }}>• 超压</span>
+                      <span style={{ color: '#ff8866' }}>{postDetails.overpressureKPa.toFixed(1)} kPa</span>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* 载具状态 */}
+              {vehicleState !== 'normal' && (
+                <div className="kv" style={{ marginTop: 6 }}>
+                  <span style={{ color: '#ff8800', fontWeight: 'bold' }}>载具状态</span>
+                  <span style={{ color: vehicleState.includes('fire') || vehicleState.includes('cookoff') || vehicleState.includes('detonat') ? '#ff4444' : '#88aacc' }}>
+                    {vehicleStateLabel(vehicleState)}
+                  </span>
+                </div>
+              )}
+            </>
+          )}
+
+          <div className="row" style={{ marginTop: 'auto' }}>
+            <button className="btn" onClick={onClose}>
+              关闭
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,35 @@
+// 3D 载具碰撞体与分区类型定义
+// 坐标系：X=左右（负左正右），Y=上下（负下正上），Z=前后（负前正后）
+
+// 相机模式
+export type CameraMode = 'free' | 'follow_trajectory' | 'focus_hit';
+
+// 3D碰撞体联合类型
+export type Zone3D =
+  | { type: 'box'; size: [number, number, number]; position: [number, number, number]; rotation?: [number, number, number] }
+  | { type: 'sphere'; radius: number; position: [number, number, number] };
+
+// 3D载具分区定义
+export interface Zone3DDef {
+  id: string;
+  name: string;
+  nameZh: string;        // 中文名
+  health: number;
+  armor: number;         // 装甲厚度 mm
+  armorType: string;
+  collision: Zone3D;     // 碰撞体
+  visual?: Zone3D;       // 视觉体（可与碰撞体不同，默认相同）
+  mirrorX?: boolean;     // X 轴对称分区（双侧装甲/履带）：在 x→-x 镜像处再渲染/碰撞一份
+  color?: string;        // 默认显示颜色
+  surfaceNormal?: [number, number, number]; // 装甲外表面法线方向（单位向量）
+}
+
+// 3D载具定义
+export interface VehicleDef3D {
+  id: string;
+  name: string;
+  nation: string;
+  br: number;            // 战斗权重
+  zones: Zone3DDef[];
+  modelOffset?: [number, number, number];  // 模型偏移
+}

@@ -1,0 +1,360 @@
+/**
+ * VehicleModel.tsx - 3D载具渲染组件
+ * 使用基础几何体（Box/Sphere）构建载具模型，每个分区独立mesh
+ * 支持Raycaster拾取、hover高亮、GLB模型导入（可选）
+ */
+import React, { useRef, useState, useCallback, useMemo, Suspense } from 'react';
+import { useFrame } from '@react-three/fiber';
+import { Html, useGLTF } from '@react-three/drei';
+import * as THREE from 'three';
+import type { VehicleDef3D, Zone3DDef, Zone3D } from '../data/types3d';
+import { useBattleStore } from '../store/battleStore';
+
+// ─── 共享 Geometry（只创建一次，所有分区复用） ───
+const SHARED_GEOMETRIES = {
+  unitBox: new THREE.BoxGeometry(1, 1, 1),
+  unitSphere: new THREE.SphereGeometry(1, 16, 12),
+};
+
+// ─── 颜色状态（四态）───
+type ZoneHealthState = 'healthy' | 'yellow' | 'orange' | 'destroyed';
+
+function getHealthState(health: number, damage: number): ZoneHealthState {
+  const pct = (damage / health) * 100;
+  if (pct >= 100) return 'destroyed';
+  if (pct >= 60) return 'orange';
+  if (pct >= 25) return 'yellow';
+  return 'healthy';
+}
+
+function getStateColor(baseColor: string, state: ZoneHealthState): string {
+  switch (state) {
+    case 'destroyed': return '#ff4d4d';
+    case 'orange': return '#ff9a3c';
+    case 'yellow': return '#f5d142';
+    case 'healthy': return baseColor;
+  }
+}
+
+// 判断分区是否处于起火状态
+function isZoneOnFire(zoneId: string, vehicleState: string): boolean {
+  switch (vehicleState) {
+    case 'engine_fire': return zoneId === 'engine';
+    case 'fuel_fire': return zoneId === 'fuel';
+    case 'ammo_cookoff': return zoneId === 'ammo';
+    default: return false;
+  }
+}
+
+// ─── Props ───
+export interface VehicleModelProps {
+  vehicle: VehicleDef3D;
+  zoneDamage?: Record<string, number>;  // 各分区累计伤害
+  selectedZoneId?: string | null;        // 当前选中分区
+  onZoneClick?: (zoneId: string) => void;
+  onZoneHover?: (zoneId: string | null) => void;
+  onWorldPosHover?: (worldPos: [number, number, number] | null) => void;
+  modelUrl?: string;                     // 可选 GLB 模型路径
+  visible?: boolean;
+}
+
+// ─── 单个分区 Mesh（React.memo 优化重渲染） ───
+interface ZoneMeshProps {
+  zone: Zone3DDef;
+  healthState: ZoneHealthState;
+  isSelected: boolean;
+  isOnFire: boolean;
+  onClick: (zoneId: string) => void;
+  onHover: (zoneId: string | null) => void;
+  onWorldPosHover?: (worldPos: [number, number, number] | null) => void;
+}
+
+const ZoneMesh = React.memo(function ZoneMesh({ zone, healthState, isSelected, isOnFire, onClick, onHover, onWorldPosHover }: ZoneMeshProps) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const [hovered, setHovered] = useState(false);
+
+  const baseColor = zone.color ?? '#5a6e4a';
+  const stateColor = getStateColor(baseColor, healthState);
+
+  // 起火闪烁动画
+  const fireColorRef = useRef(new THREE.Color('#ff6600'));
+  const fireTargetRef = useRef(new THREE.Color('#ff2200'));
+  useFrame(() => {
+    if (!isOnFire || !meshRef.current) return;
+    const mat = meshRef.current.material;
+    if (mat && 'color' in mat) {
+      const t = (Math.sin(Date.now() * 0.006) + 1) / 2;
+      fireColorRef.current.set('#ff6600').lerp(fireTargetRef.current.set('#ff2200'), t);
+      (mat as THREE.MeshStandardMaterial).color.copy(fireColorRef.current);
+      (mat as THREE.MeshStandardMaterial).emissive.set('#ff4400');
+      (mat as THREE.MeshStandardMaterial).emissiveIntensity = 0.3 + t * 0.5;
+    }
+  });
+
+  // 颜色计算
+  const color = useMemo(() => {
+    if (isOnFire) return '#ff6600'; // 起火时初始颜色，useFrame会覆盖
+    if (isSelected) return '#ffffff';
+    if (hovered) return lightenColor(stateColor, 0.3);
+    return stateColor;
+  }, [isSelected, hovered, stateColor, isOnFire]);
+
+  const emissiveColor = useMemo(() => {
+    if (isOnFire) return '#ff4400';
+    if (isSelected) return '#ff4400';
+    if (hovered) return '#332200';
+    return baseColor; // 默认使用基色作为微弱自发光
+  }, [isSelected, hovered, isOnFire, baseColor]);
+
+  const emissiveIntensity = isOnFire ? 0.5 : isSelected ? 0.6 : hovered ? 0.3 : 0.1;
+
+  const handlePointerOver = useCallback((e: THREE.Event) => {
+    (e as any).stopPropagation();
+    setHovered(true);
+    onHover(zone.id);
+    if (onWorldPosHover && meshRef.current) {
+      const wp = new THREE.Vector3();
+      meshRef.current.getWorldPosition(wp);
+      onWorldPosHover([wp.x, wp.y, wp.z]);
+    }
+  }, [zone.id, onHover, onWorldPosHover]);
+
+  const handlePointerOut = useCallback(() => {
+    setHovered(false);
+    onHover(null);
+    onWorldPosHover?.(null);
+  }, [onHover, onWorldPosHover]);
+
+  const handleClick = useCallback((e: THREE.Event) => {
+    (e as any).stopPropagation();
+    onClick(zone.id);
+  }, [zone.id, onClick]);
+
+  const collision = zone.collision;
+  const visual = zone.visual ?? collision;
+
+  return (
+    <group>
+      {/* 碰撞体（不可见，用于射线检测） */}
+      <ZoneGeometry
+        zone={collision}
+        meshRef={meshRef}
+        visible={false}
+        onClick={handleClick}
+        onPointerOver={handlePointerOver}
+        onPointerOut={handlePointerOut}
+      />
+      {/* 视觉体（可见） */}
+      <ZoneGeometry
+        zone={visual}
+        visible={true}
+        color={color}
+        emissive={emissiveColor}
+        emissiveIntensity={emissiveIntensity}
+        onClick={handleClick}
+        onPointerOver={handlePointerOver}
+        onPointerOut={handlePointerOut}
+      />
+    </group>
+  );
+});
+
+// ─── 几何体渲染 ───
+interface ZoneGeometryProps {
+  zone: Zone3D;
+  meshRef?: React.RefObject<THREE.Mesh>;
+  visible: boolean;
+  color?: string;
+  emissive?: string;
+  emissiveIntensity?: number;
+  onClick?: (e: any) => void;
+  onPointerOver?: (e: any) => void;
+  onPointerOut?: () => void;
+}
+
+function ZoneGeometry({
+  zone,
+  meshRef,
+  visible,
+  color = '#888888',
+  emissive = '#000000',
+  emissiveIntensity = 0,
+  onClick,
+  onPointerOver,
+  onPointerOut,
+}: ZoneGeometryProps) {
+  // 使用共享 Geometry，通过 scale 实现尺寸变化，避免重复创建 Geometry
+  const geometry = zone.type === 'box'
+    ? SHARED_GEOMETRIES.unitBox
+    : SHARED_GEOMETRIES.unitSphere;
+
+  // 材质参数 memo 化
+  const materialProps = useMemo(() => ({
+    color,
+    emissive,
+    emissiveIntensity,
+    transparent: !visible,
+    opacity: visible ? 1 : 0,
+    roughness: 0.7,
+    metalness: 0.3,
+  }), [color, emissive, emissiveIntensity, visible]);
+
+  if (zone.type === 'box') {
+    const [sx, sy, sz] = zone.size;
+    const [px, py, pz] = zone.position;
+    const rot = zone.rotation ? zone.rotation.map(r => (r * Math.PI) / 180) as [number, number, number] : undefined;
+    return (
+      <mesh
+        ref={meshRef}
+        geometry={geometry}
+        scale={[sx, sy, sz]}
+        position={[px, py, pz]}
+        rotation={rot}
+        visible={visible}
+        onClick={onClick}
+        onPointerOver={onPointerOver}
+        onPointerOut={onPointerOut}
+      >
+        <meshStandardMaterial
+          color={materialProps.color}
+          emissive={materialProps.emissive}
+          emissiveIntensity={materialProps.emissiveIntensity}
+          transparent={materialProps.transparent}
+          opacity={materialProps.opacity}
+          roughness={materialProps.roughness}
+          metalness={materialProps.metalness}
+        />
+      </mesh>
+    );
+  } else {
+    // sphere
+    const r = zone.radius;
+    const [px, py, pz] = zone.position;
+    return (
+      <mesh
+        ref={meshRef}
+        geometry={geometry}
+        scale={[r, r, r]}
+        position={[px, py, pz]}
+        visible={visible}
+        onClick={onClick}
+        onPointerOver={onPointerOver}
+        onPointerOut={onPointerOut}
+      >
+        <meshStandardMaterial
+          color={materialProps.color}
+          emissive={materialProps.emissive}
+          emissiveIntensity={materialProps.emissiveIntensity}
+          transparent={materialProps.transparent}
+          opacity={materialProps.opacity}
+          roughness={materialProps.roughness}
+          metalness={materialProps.metalness}
+        />
+      </mesh>
+    );
+  }
+}
+
+// ─── GLB 模型加载器（可选） ───
+function GLBModel({ url, onClick }: { url: string; onClick?: (e: any) => void }) {
+  const { scene } = useGLTF(url);
+  return (
+    <primitive
+      object={scene}
+      onClick={onClick}
+      scale={[1, 1, 1]}
+    />
+  );
+}
+
+// ─── 主组件 ───
+export default function VehicleModel({
+  vehicle,
+  zoneDamage = {},
+  selectedZoneId = null,
+  onZoneClick,
+  onZoneHover,
+  onWorldPosHover,
+  modelUrl,
+  visible = true,
+}: VehicleModelProps) {
+  const groupRef = useRef<THREE.Group>(null);
+  const vehicleState = useBattleStore(s => s.vehicleState);
+
+  // 简单浮动动画
+  useFrame((state) => {
+    if (groupRef.current) {
+      groupRef.current.position.y = Math.sin(state.clock.elapsedTime * 0.5) * 0.02;
+    }
+  });
+
+  const handleZoneClick = useCallback((zoneId: string) => {
+    onZoneClick?.(zoneId);
+  }, [onZoneClick]);
+
+  const handleZoneHover = useCallback((zoneId: string | null) => {
+    onZoneHover?.(zoneId);
+  }, [onZoneHover]);
+
+  const handleWorldPosHover = useCallback((worldPos: [number, number, number] | null) => {
+    onWorldPosHover?.(worldPos);
+  }, [onWorldPosHover]);
+
+  const offset = vehicle.modelOffset ?? [0, 0, 0];
+
+  return (
+    <group ref={groupRef} position={[offset[0], offset[1], offset[2]]} visible={visible}>
+      {modelUrl ? (
+        <Suspense fallback={
+          // 加载中占位：显示所有分区几何体
+          vehicle.zones.map((zone) => {
+            const health = zone.health;
+            const damage = zoneDamage[zone.id] ?? 0;
+            const state = getHealthState(health, damage);
+            const onFire = isZoneOnFire(zone.id, vehicleState);
+            return (
+              <ZoneMesh
+                key={zone.id}
+                zone={zone}
+                healthState={state}
+                isSelected={selectedZoneId === zone.id}
+                isOnFire={onFire}
+                onClick={handleZoneClick}
+                onHover={handleZoneHover}
+                onWorldPosHover={handleWorldPosHover}
+              />
+            );
+          })
+        }>
+          <GLBModel url={modelUrl} />
+        </Suspense>
+      ) : (
+        vehicle.zones.map((zone) => {
+          const health = zone.health;
+          const damage = zoneDamage[zone.id] ?? 0;
+          const state = getHealthState(health, damage);
+          const onFire = isZoneOnFire(zone.id, vehicleState);
+          return (
+            <ZoneMesh
+              key={zone.id}
+              zone={zone}
+              healthState={state}
+              isSelected={selectedZoneId === zone.id}
+              isOnFire={onFire}
+              onClick={handleZoneClick}
+              onHover={handleZoneHover}
+              onWorldPosHover={handleWorldPosHover}
+            />
+          );
+        })
+      )}
+    </group>
+  );
+}
+
+// ─── 工具函数 ───
+function lightenColor(hex: string, amount: number): string {
+  const color = new THREE.Color(hex);
+  color.lerp(new THREE.Color('#ffffff'), amount);
+  return '#' + color.getHexString();
+}
