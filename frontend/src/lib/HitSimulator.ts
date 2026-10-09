@@ -3,7 +3,14 @@ import type { Ammo, AmmoTypeId } from '../data/ammo';
 import { getAmmo } from '../data/ammo';
 import type { Zone } from '../data/vehicle';
 import { VEHICLE } from '../data/vehicle';
-import { evaluateHit, evaluateHit3D, type PenetrationResult, type PenetrationResult3D, type Armor3D } from './penetration';
+import {
+  evaluateHit,
+  evaluateHit3D,
+  type PenetrationResult,
+  type PenetrationResult3D,
+  type Armor3D,
+} from './penetration';
+import type { Rng } from './rng';
 import type { Vector3 } from './ballistics';
 import { computeBallistics3D } from './ballistics';
 
@@ -13,6 +20,7 @@ export interface SimHit {
   distance: number;
   result: PenetrationResult;
   trajectory?: { x: number; y: number; z: number }[];
+  seed?: number; // 本次命中使用的随机种子（回放/复现用）
 }
 
 export interface SimHit3D {
@@ -24,8 +32,8 @@ export interface SimHit3D {
   result: PenetrationResult3D;
 }
 
-export function simulateHit(ammo: Ammo, zone: Zone | null, distance: number): SimHit {
-  const result = evaluateHit({ ammo, zone, distance });
+export function simulateHit(ammo: Ammo, zone: Zone | null, distance: number, rng?: Rng): SimHit {
+  const result = evaluateHit({ ammo, zone, distance, rng });
 
   // 生成弹道轨迹采样点（用于 3D 可视化）
   // 坐标系：弹道坐标系 (x=前方, y=右侧, z=上方)，与 computeBallistics3D 一致
@@ -45,8 +53,8 @@ export function simulateHit(ammo: Ammo, zone: Zone | null, distance: number): Si
   const trajectory: { x: number; y: number; z: number }[] = [];
   for (let i = 0; i <= SAMPLE_COUNT; i++) {
     const t = (i / SAMPLE_COUNT) * tof;
-    const fwd = distance * (t / tof);                          // 前方距离（弹道坐标系 x）
-    const hgt = vz0 * t - 0.5 * 9.81 * t * t;                // 高度（弹道坐标系 z）
+    const fwd = distance * (t / tof); // 前方距离（弹道坐标系 x）
+    const hgt = vz0 * t - 0.5 * 9.81 * t * t; // 高度（弹道坐标系 z）
     // 弹道坐标系: x=前方, y=右侧(无侧风=0), z=上方
     trajectory.push({ x: fwd, y: 0, z: hgt });
   }
@@ -134,13 +142,14 @@ export function synthSceneTrajectory(
     targetPos.x * targetPos.x + targetPos.y * targetPos.y + targetPos.z * targetPos.z,
   );
   // 目标点在原点（分区均有偏置，理论不触发）：退化为 +Z 方向生成点，保证轨迹仍有效
-  const spawn: Vector3 = len > 1e-6
-    ? {
-        x: (targetPos.x / len) * spawnRadius,
-        y: (targetPos.y / len) * spawnRadius,
-        z: (targetPos.z / len) * spawnRadius,
-      }
-    : { x: 0, y: 0, z: spawnRadius };
+  const spawn: Vector3 =
+    len > 1e-6
+      ? {
+          x: (targetPos.x / len) * spawnRadius,
+          y: (targetPos.y / len) * spawnRadius,
+          z: (targetPos.z / len) * spawnRadius,
+        }
+      : { x: 0, y: 0, z: spawnRadius };
   return generateStraightTrajectory(targetPos, 0, spawn);
 }
 
@@ -170,9 +179,8 @@ export function simulateHit3DStraight(
   const dy = targetZone3DPos.y - trajectory[0].y;
   const dz = targetZone3DPos.z - trajectory[0].z;
   const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
-  const shotDirection: Vector3 = len > 0
-    ? { x: dx / len, y: dy / len, z: dz / len }
-    : { x: 0, y: 0, z: 1 };
+  const shotDirection: Vector3 =
+    len > 0 ? { x: dx / len, y: dy / len, z: dz / len } : { x: 0, y: 0, z: 1 };
 
   // 装甲法线：优先使用分区定义的表面法向量，否则回退到射击方向反方向（垂直命中）
   const normalVector: Vector3 = zoneNormal
@@ -229,10 +237,10 @@ export function simulateHit3DStraight(
 }
 
 // 随机一发（用于"自动开火"演示）：随机选分区 + 随机距离
-export function randomHit(ammoId: AmmoTypeId): SimHit {
+export function randomHit(ammoId: AmmoTypeId, rng: Rng = Math.random): SimHit {
   const ammo = getAmmo(ammoId);
   const zones = VEHICLE.zones;
-  const zone = zones[Math.floor(Math.random() * zones.length)];
-  const distance = 150 + Math.floor(Math.random() * 1350); // 150–1500m
-  return simulateHit(ammo, zone, distance);
+  const zone = zones[Math.floor(rng() * zones.length)];
+  const distance = 150 + Math.floor(rng() * 1350); // 150–1500m
+  return simulateHit(ammo, zone, distance, rng);
 }

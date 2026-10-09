@@ -4,6 +4,7 @@ import { getAmmo } from '../data/ammo';
 import type { Zone } from '../data/vehicle';
 import { VEHICLE } from '../data/vehicle';
 import { simulateHit, randomHit, type SimHit } from '../lib/HitSimulator';
+import { createRng, type Rng } from '../lib/rng';
 import type { CameraMode } from '../data/types3d';
 import type { PenetrationResult } from '../lib/penetration';
 import {
@@ -18,14 +19,14 @@ import {
 
 // ─── 状态优先级常量 ───
 const STATE_PRIORITY: Record<string, number> = {
-  'normal': 0,
-  'module_damaged': 1,
-  'engine_fire': 2,
-  'fuel_fire': 2,
-  'ammo_cookoff': 3,
-  'ammo_detonated': 4,
-  'fuel_exploded': 4,
-  'destroyed': 5,
+  normal: 0,
+  module_damaged: 1,
+  engine_fire: 2,
+  fuel_fire: 2,
+  ammo_cookoff: 3,
+  ammo_detonated: 4,
+  fuel_exploded: 4,
+  destroyed: 5,
 };
 
 interface VehicleConfig {
@@ -56,16 +57,17 @@ interface BattleState {
   replayToken: number; // 自增以触发回放动画
   zoneDamage: Record<string, number>; // 各分区累计损伤 0–100
   // ─── 3D 场景状态 ───
-  replayIndex: number;        // 当前回放帧索引
-  cameraMode: CameraMode;     // 相机模式
-  replaySpeed: number;        // 回放速度倍率
-  use3DView: boolean;         // 是否使用3D视图（默认true）
+  replayIndex: number; // 当前回放帧索引
+  cameraMode: CameraMode; // 相机模式
+  replaySpeed: number; // 回放速度倍率
+  use3DView: boolean; // 是否使用3D视图（默认true）
   // ─── 后效连锁状态 ───
-  chainEvents: SpecialEvent[];        // 当前触发的连锁事件列表
-  vehicleState: string;               // 当前载具状态
-  crewKilled: string[];               // 阵亡乘员名列表
+  chainEvents: SpecialEvent[]; // 当前触发的连锁事件列表
+  vehicleState: string; // 当前载具状态
+  crewKilled: string[]; // 阵亡乘员名列表
   // ─── 载具配置 ───
   vehicleConfig: VehicleConfig;
+  rngSeed: number; // 随机种子计数器：每次开火取当前值生成可播种 RNG，随后自增
   setAmmo: (id: AmmoTypeId) => void;
   setDistance: (d: number) => void;
   fireAtZone: (zone: Zone | null) => void; // 点击载具开火（用当前距离）
@@ -76,9 +78,9 @@ interface BattleState {
   setReplayIndex: (index: number) => void;
   setCameraMode: (mode: CameraMode) => void;
   setReplaySpeed: (speed: number) => void;
-  toggleView: () => void;  // 切换2D/3D视图
+  toggleView: () => void; // 切换2D/3D视图
   // ─── 后效处理 ───
-  applyPostEffects: (hitResult: PenetrationResult, zoneKey: string) => void;
+  applyPostEffects: (hitResult: PenetrationResult, zoneKey: string, rng?: Rng) => void;
 }
 
 function accumulate(zoneDamage: Record<string, number>, hit: SimHit): Record<string, number> {
@@ -118,16 +120,19 @@ export const useBattleStore = create<BattleState>((set, get) => ({
   vehicleState: 'normal',
   crewKilled: [],
   vehicleConfig: { ...DEFAULT_VEHICLE_CONFIG },
+  rngSeed: 1,
 
   setAmmo: (id) => set({ ammoId: id }),
   setDistance: (d) => set({ distance: Math.max(50, Math.min(2000, Math.round(d))) }),
 
   fireAtZone: (zone) => {
-    const { ammoId, distance, hits, zoneDamage, vehicleConfig } = get();
+    const { ammoId, distance, hits, zoneDamage, vehicleConfig, rngSeed } = get();
     // 开火消耗弹药
     const newRemainingAmmo = Math.max(0, vehicleConfig.remainingAmmo - 1);
     const ammo = getAmmo(ammoId);
-    const hit = simulateHit(ammo, zone, distance);
+    const rng = createRng(rngSeed);
+    const hit = simulateHit(ammo, zone, distance, rng);
+    hit.seed = rngSeed;
     const newZoneDamage = accumulate(zoneDamage, hit);
 
     set({
@@ -136,17 +141,18 @@ export const useBattleStore = create<BattleState>((set, get) => ({
       zoneDamage: newZoneDamage,
       replayToken: get().replayToken + 1,
       vehicleConfig: { ...vehicleConfig, remainingAmmo: newRemainingAmmo },
+      rngSeed: rngSeed + 1,
     });
 
     // 命中后处理后效（仅在击穿且存在分区key时）
     if (zone && hit.result.penetrated) {
-      get().applyPostEffects(hit.result, zone.key);
+      get().applyPostEffects(hit.result, zone.key, rng);
     }
   },
 
   fireRandom: () => {
     const state = get();
-    const { ammoId, hits, zoneDamage, vehicleConfig } = state;
+    const { ammoId, hits, zoneDamage, vehicleConfig, rngSeed } = state;
 
     // 检查弹药是否耗尽
     if (vehicleConfig.remainingAmmo <= 0) {
@@ -154,7 +160,9 @@ export const useBattleStore = create<BattleState>((set, get) => ({
       return;
     }
 
-    const hit = randomHit(ammoId);
+    const rng = createRng(rngSeed);
+    const hit = randomHit(ammoId, rng);
+    hit.seed = rngSeed;
     const newZoneDamage = accumulate(zoneDamage, hit);
     const newRemainingAmmo = Math.max(0, vehicleConfig.remainingAmmo - 1);
 
@@ -164,33 +172,36 @@ export const useBattleStore = create<BattleState>((set, get) => ({
       zoneDamage: newZoneDamage,
       replayToken: get().replayToken + 1,
       vehicleConfig: { ...vehicleConfig, remainingAmmo: newRemainingAmmo },
+      rngSeed: rngSeed + 1,
     });
 
     // 随机命中也处理后效
     if (hit.zoneKey && hit.result.penetrated) {
-      get().applyPostEffects(hit.result, hit.zoneKey);
+      get().applyPostEffects(hit.result, hit.zoneKey, rng);
     }
   },
 
   closeAnalysis: () => set({ current: null, chainEvents: [] }),
-  reset: () => set({
-    hits: [],
-    current: null,
-    zoneDamage: {},
-    replayToken: get().replayToken + 1,
-    replayIndex: 0,
-    chainEvents: [],
-    vehicleState: 'normal',
-    crewKilled: [],
-    vehicleConfig: { ...DEFAULT_VEHICLE_CONFIG },
-  }),
+  reset: () =>
+    set({
+      hits: [],
+      current: null,
+      zoneDamage: {},
+      replayToken: get().replayToken + 1,
+      replayIndex: 0,
+      chainEvents: [],
+      vehicleState: 'normal',
+      crewKilled: [],
+      vehicleConfig: { ...DEFAULT_VEHICLE_CONFIG },
+      rngSeed: 1, // 种子复位：reset 后战斗序列可完全复现
+    }),
 
   setReplayIndex: (index) => set({ replayIndex: index }),
   setCameraMode: (mode) => set({ cameraMode: mode as CameraMode }),
   setReplaySpeed: (speed) => set({ replaySpeed: speed }),
   toggleView: () => set({ use3DView: !get().use3DView }),
 
-  applyPostEffects: (hitResult: PenetrationResult, zoneKey: string) => {
+  applyPostEffects: (hitResult: PenetrationResult, zoneKey: string, rng: Rng = Math.random) => {
     const { zoneDamage, chainEvents: existingEvents, ammoId, vehicleConfig } = get();
     const details: PostEffectDetail | undefined = hitResult.postEffectDetails;
     if (!details) return;
@@ -229,7 +240,6 @@ export const useBattleStore = create<BattleState>((set, get) => ({
 
     // ─── b. 特殊事件判定 ───
     const currentDamage = updatedDamage[zoneKey] ?? 0;
-    const ammo = getAmmo(ammoId);
 
     if (zoneKey.includes('ammo')) {
       // 弹药架命中 → 殉爆 / cook-off 判定
@@ -240,14 +250,18 @@ export const useBattleStore = create<BattleState>((set, get) => ({
         vehicleConfig.hasBlowoutPanels,
         currentDamage < 50, // compartmentIntact
       );
-      const roll = Math.random();
+      const roll = rng();
       if (roll < detonationProb) {
         // 殉爆
         newEvents.push({ type: 'ammo_detonation', zoneKey });
         tryUpgradeState('ammo_detonated');
       } else if (roll < detonationProb + 0.2) {
         // cook-off（延迟爆炸）
-        const delay = cookoffDelay(vehicleConfig.remainingAmmo, vehicleConfig.hasBlowoutPanels);
+        const delay = cookoffDelay(
+          vehicleConfig.remainingAmmo,
+          vehicleConfig.hasBlowoutPanels,
+          rng,
+        );
         newEvents.push({ type: 'ammo_cookoff', zoneKey, delaySeconds: delay });
         tryUpgradeState('ammo_cookoff');
       }
@@ -261,18 +275,17 @@ export const useBattleStore = create<BattleState>((set, get) => ({
         vehicleConfig.fuelRemaining,
         vehicleConfig.hasFirewall,
       );
-      if (Math.random() < fireProb) {
+      if (rng() < fireProb) {
         newEvents.push({ type: 'fuel_fire', zoneKey, probability: fireProb });
         tryUpgradeState('fuel_fire');
 
         // 燃油起火有概率引发燃油爆炸
         const fuelExplosionProb = 0.3;
-        if (Math.random() < fuelExplosionProb) {
+        if (rng() < fuelExplosionProb) {
           newEvents.push({ type: 'fuel_explosion', zoneKey });
           tryUpgradeState('fuel_exploded');
           // 燃油爆炸直接击杀所有乘员
-          const allCrewMembers = VEHICLE.zones
-            .flatMap((z) => z.crewMembers ?? []);
+          const allCrewMembers = VEHICLE.zones.flatMap((z) => z.crewMembers ?? []);
           updatedCrewKilled = [...new Set(allCrewMembers)];
         }
       }
@@ -280,19 +293,15 @@ export const useBattleStore = create<BattleState>((set, get) => ({
 
     if (zoneKey.includes('engine')) {
       // 发动机命中 → 起火判定
-      const fireProb = engineFireProbability(
-        ammoId,
-        vehicleConfig.engineType,
-        currentDamage,
-      );
-      if (Math.random() < fireProb) {
+      const fireProb = engineFireProbability(ammoId, vehicleConfig.engineType, currentDamage);
+      if (rng() < fireProb) {
         newEvents.push({ type: 'engine_fire', zoneKey, probability: fireProb });
         tryUpgradeState('engine_fire');
       }
 
       // 发动机受损 → 停转判定（损伤越大概率停转）
       const stallProb = currentDamage / 100;
-      if (Math.random() < stallProb) {
+      if (rng() < stallProb) {
         newEvents.push({
           type: 'engine_stall',
           zoneKey,
@@ -330,17 +339,13 @@ export const useBattleStore = create<BattleState>((set, get) => ({
     }
 
     // ─── c2. 模块受损状态判定 ───
-    const hasDamagedModules = Object.values(updatedDamage).some(
-      (d) => d > 0 && d < 100
-    );
+    const hasDamagedModules = Object.values(updatedDamage).some((d) => d > 0 && d < 100);
     if (hasDamagedModules && newVehicleState === 'normal') {
       tryUpgradeState('module_damaged');
     }
 
     // ─── c3. 乘员全员阵亡 → destroyed 判定 ───
-    const totalCrewCount = VEHICLE.zones
-      .flatMap((z) => z.crewMembers ?? [])
-      .length || 4;
+    const totalCrewCount = VEHICLE.zones.flatMap((z) => z.crewMembers ?? []).length || 4;
     if (updatedCrewKilled.length >= totalCrewCount) {
       tryUpgradeState('destroyed');
     }

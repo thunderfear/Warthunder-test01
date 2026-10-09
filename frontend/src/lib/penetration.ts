@@ -3,18 +3,25 @@ import type { Ammo, PostPenModel } from '../data/ammo';
 import { VEHICLE, type Zone } from '../data/vehicle';
 import { VEHICLE_3D, getZoneCollisionCenters } from '../data/vehicle3d';
 import { computeBallistics, computeBallistics3D, type Vector3 } from './ballistics';
-import { type PostEffectDetail, type SpallCone, type SplashZone, generateSpallCone, calculateOverpressure } from './chainReactions';
+import {
+  type PostEffectDetail,
+  type SpallCone,
+  type SplashZone,
+  generateSpallCone,
+  calculateOverpressure,
+} from './chainReactions';
+import type { Rng } from './rng';
 
 export interface PenetrationResult {
   distance: number;
-  impactAngleDeg: number;     // 入射角（含装甲倾角）
+  impactAngleDeg: number; // 入射角（含装甲倾角）
   effectiveThickness: number; // 有效装甲厚度 mm
-  shellPen: number;           // 该距离下弹丸穿深 mm
+  shellPen: number; // 该距离下弹丸穿深 mm
   penetrated: boolean;
   ricochet: boolean;
-  missed: boolean;            // 命中载具之外（未命中任何模块/装甲）
-  armorNeutralized: boolean;  // 反应装甲等使弹丸失效
-  postPenDamage: number;      // 本发造成的损伤 0–100
+  missed: boolean; // 命中载具之外（未命中任何模块/装甲）
+  armorNeutralized: boolean; // 反应装甲等使弹丸失效
+  postPenDamage: number; // 本发造成的损伤 0–100
   crewKilled: boolean;
   resultText: string;
   postEffectDetails?: PostEffectDetail; // 后效详情（连锁反应、破片锥、超压等）
@@ -27,6 +34,7 @@ export interface PostEffectContext {
   zone: Zone;
   penetrated: boolean;
   adjacentZoneMap?: Map<string, string[]>; // 相邻分区映射，用于破片锥计算
+  rng?: Rng; // 可播种随机源（缺省回退 Math.random，保证向后兼容）
 }
 
 export interface PostEffectResult {
@@ -100,12 +108,13 @@ export class APStrategy implements PostEffectStrategy {
 
     // AP 后效：极小破片锥（直线穿透）
     const fragments = ctx.adjacentZoneMap
-      ? generateSpallCone(zone.key, 10, 2, postPenDamage * 0.3, ctx.adjacentZoneMap)
+      ? generateSpallCone(zone.key, 10, 2, postPenDamage * 0.3, ctx.adjacentZoneMap, ctx.rng)
       : [];
     const spallCone: SpallCone = { angleDeg: 10, fragmentCount: 2, fragments };
 
     return {
-      postPenDamage, crewKilled,
+      postPenDamage,
+      crewKilled,
       postEffectDetails: { spallCone },
     };
   }
@@ -120,10 +129,18 @@ export class APHEStrategy implements PostEffectStrategy {
     const crewKilled = zone.category === 'crew' && postPenDamage >= 80;
 
     // APHE 后效：30-45° 破片锥
-    const coneAngle = 30 + Math.random() * 15; // 30~45°
-    const fragmentCount = Math.round(4 + Math.random() * 4); // 4~8 片
+    const rng = ctx.rng ?? Math.random;
+    const coneAngle = 30 + rng() * 15; // 30~45°
+    const fragmentCount = Math.round(4 + rng() * 4); // 4~8 片
     const fragments = ctx.adjacentZoneMap
-      ? generateSpallCone(zone.key, coneAngle, fragmentCount, postPenDamage * 0.5, ctx.adjacentZoneMap)
+      ? generateSpallCone(
+          zone.key,
+          coneAngle,
+          fragmentCount,
+          postPenDamage * 0.5,
+          ctx.adjacentZoneMap,
+          rng,
+        )
       : [];
     const spallCone: SpallCone = { angleDeg: Math.round(coneAngle), fragmentCount, fragments };
 
@@ -136,7 +153,8 @@ export class APHEStrategy implements PostEffectStrategy {
     }
 
     return {
-      postPenDamage, crewKilled,
+      postPenDamage,
+      crewKilled,
       postEffectDetails: { spallCone, overpressureKPa },
     };
   }
@@ -153,12 +171,13 @@ export class HEATStrategy implements PostEffectStrategy {
 
     // HEAT 后效：窄锥射流（15°），高温射流碎片
     const fragments = ctx.adjacentZoneMap
-      ? generateSpallCone(zone.key, 15, 5, d * 0.6, ctx.adjacentZoneMap)
+      ? generateSpallCone(zone.key, 15, 5, d * 0.6, ctx.adjacentZoneMap, ctx.rng)
       : [];
     const spallCone: SpallCone = { angleDeg: 15, fragmentCount: 5, fragments };
 
     return {
-      postPenDamage: d, crewKilled,
+      postPenDamage: d,
+      crewKilled,
       postEffectDetails: { spallCone },
     };
   }
@@ -174,12 +193,13 @@ export class APCRStrategy implements PostEffectStrategy {
 
     // APCR 后效：极小破片锥（5°），极少碎片
     const fragments = ctx.adjacentZoneMap
-      ? generateSpallCone(zone.key, 5, 1, postPenDamage * 0.15, ctx.adjacentZoneMap)
+      ? generateSpallCone(zone.key, 5, 1, postPenDamage * 0.15, ctx.adjacentZoneMap, ctx.rng)
       : [];
     const spallCone: SpallCone = { angleDeg: 5, fragmentCount: 1, fragments };
 
     return {
-      postPenDamage, crewKilled,
+      postPenDamage,
+      crewKilled,
       postEffectDetails: { spallCone },
     };
   }
@@ -193,12 +213,14 @@ export class HEStrategy implements PostEffectStrategy {
     let crewKilled: boolean;
 
     if (zone.category === 'crew') {
-      postPenDamage = 90; crewKilled = true;
+      postPenDamage = 90;
+      crewKilled = true;
     } else if (zone.category === 'module') {
       postPenDamage = zone.armorType === 'RHA' && zone.nominalThickness <= 30 ? 70 : 40;
       crewKilled = false;
     } else {
-      postPenDamage = 20; crewKilled = false;
+      postPenDamage = 20;
+      crewKilled = false;
     }
 
     // HE 后效：全向爆炸
@@ -209,7 +231,7 @@ export class HEStrategy implements PostEffectStrategy {
 
     // 全向破片溅射（360°）
     const fragments = ctx.adjacentZoneMap
-      ? generateSpallCone(zone.key, 360, 10, postPenDamage * 0.6, ctx.adjacentZoneMap)
+      ? generateSpallCone(zone.key, 360, 10, postPenDamage * 0.6, ctx.adjacentZoneMap, ctx.rng)
       : [];
     const spallCone: SpallCone = { angleDeg: 360, fragmentCount: 10, fragments };
 
@@ -223,7 +245,8 @@ export class HEStrategy implements PostEffectStrategy {
     }
 
     return {
-      postPenDamage, crewKilled,
+      postPenDamage,
+      crewKilled,
       postEffectDetails: {
         spallCone,
         overpressureKPa: opResult.overpressureKPa,
@@ -268,8 +291,9 @@ export function evaluateHit(opts: {
   ammo: Ammo;
   zone: Zone | null;
   distance: number;
+  rng?: Rng;
 }): PenetrationResult {
-  const { ammo, zone, distance } = opts;
+  const { ammo, zone, distance, rng } = opts;
 
   const ball = computeBallistics({
     distance,
@@ -346,7 +370,8 @@ export function evaluateHit(opts: {
       shellPen *= 0.7;
     }
   } else if (zone.armorType === 'composite') {
-    if (ammo.postPen === 'jet') shellPen *= 0.85; // 复合装甲削弱破甲
+    if (ammo.postPen === 'jet')
+      shellPen *= 0.85; // 复合装甲削弱破甲
     else shellPen *= 0.95;
   }
 
@@ -367,13 +392,25 @@ export function evaluateHit(opts: {
   if (ammo.postPen === 'blast' || penetrated) {
     const adjacentZoneMap = buildAdjacentZoneMap(VEHICLE.zones);
     const strategy = getPostEffectStrategy(ammo.postPen);
-    const effect = strategy.compute({ ammo, zone, penetrated: true, adjacentZoneMap });
+    const effect = strategy.compute({ ammo, zone, penetrated: true, adjacentZoneMap, rng });
     postPenDamage = effect.postPenDamage;
     crewKilled = effect.crewKilled;
     postEffectDetails = effect.postEffectDetails;
   }
 
-  const resultText = buildResultText(ammo, zone, distance, impactAngle, effectiveThickness, shellPen, penetrated, ricochet, armorNeutralized, postPenDamage, crewKilled);
+  const resultText = buildResultText(
+    ammo,
+    zone,
+    distance,
+    impactAngle,
+    effectiveThickness,
+    shellPen,
+    penetrated,
+    ricochet,
+    armorNeutralized,
+    postPenDamage,
+    crewKilled,
+  );
 
   return {
     distance,
@@ -408,7 +445,8 @@ function buildResultText(
   if (neutralized) return head + ' → 反应装甲化解';
   if (ricochet) return head + ' → 跳弹（未击穿）';
   const verb = penetrated ? '击穿' : '未击穿';
-  const tail = zone.category === 'crew' && killed ? `，击毁${zone.label}` : `，${zone.label}受损 ${dmg}%`;
+  const tail =
+    zone.category === 'crew' && killed ? `，击毁${zone.label}` : `，${zone.label}受损 ${dmg}%`;
   return head + ` → ${verb}${tail}`;
 }
 
@@ -416,16 +454,16 @@ function buildResultText(
 
 export interface Armor3D {
   nominalThickness: number; // 标称厚度 mm
-  normalVector: Vector3;    // 装甲表面法向量（单位向量）
+  normalVector: Vector3; // 装甲表面法向量（单位向量）
   armorType: 'RHA' | 'spaced' | 'composite' | 'ERA';
   category: 'armor' | 'module' | 'crew';
   label: string;
 }
 
 export interface PenetrationResult3D extends PenetrationResult {
-  impactPoint3D: Vector3;          // 3D命中点
-  normalVector: Vector3;           // 命中点法向量
-  trueIncidentAngleDeg: number;    // 真实3D入射角（由法向量点积计算）
+  impactPoint3D: Vector3; // 3D命中点
+  normalVector: Vector3; // 命中点法向量
+  trueIncidentAngleDeg: number; // 真实3D入射角（由法向量点积计算）
   ricochetDirection: Vector3 | null; // 3D反弹方向向量
   /**
    * impactPoint3D / ricochetDirection 的坐标系：
@@ -455,21 +493,18 @@ function vec3Scale(v: Vector3, s: number): Vector3 {
   return { x: v.x * s, y: v.y * s, z: v.z * s };
 }
 
-function vec3Add(a: Vector3, b: Vector3): Vector3 {
-  return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z };
-}
-
 /**
  * 3D命中评估：支持3D法向量入射，用向量点积计算真实入射角
  */
 export function evaluateHit3D(opts: {
   ammo: Ammo;
   armor: Armor3D | null;
-  impactPoint: Vector3;     // 3D命中点
-  shotDirection: Vector3;   // 弹丸飞行方向（单位向量）
+  impactPoint: Vector3; // 3D命中点
+  shotDirection: Vector3; // 弹丸飞行方向（单位向量）
   distance: number;
+  rng?: Rng;
 }): PenetrationResult3D {
-  const { ammo, armor, impactPoint, shotDirection, distance } = opts;
+  const { ammo, armor, impactPoint, shotDirection, distance, rng } = opts;
 
   // 计算3D弹道
   const ball3D = computeBallistics3D({
@@ -529,9 +564,7 @@ export function evaluateHit3D(opts: {
     // 反弹方向 = 弹丸方向关于装甲平面的真镜像：shotDir - 2·(shotDir·normal)·normal
     // （法向分量翻转、切向分量保持，入射角=反射角）
     const dn = vec3Dot(shotDir, normal);
-    const ricochetDir = vec3Normalize(
-      vec3Subtract(shotDir, vec3Scale(normal, 2 * dn))
-    );
+    const ricochetDir = vec3Normalize(vec3Subtract(shotDir, vec3Scale(normal, 2 * dn)));
     return {
       distance,
       impactAngleDeg: normalAngleDeg,
@@ -605,7 +638,7 @@ export function evaluateHit3D(opts: {
   let postEffectDetails: PostEffectDetail | undefined;
   if (ammo.postPen === 'blast' || penetrated) {
     // 从 2D 分区数据中查找匹配分区，获取 adjacentZones 等完整信息
-    const matching2DZone = VEHICLE.zones.find(z => z.key === nearestZoneKey);
+    const matching2DZone = VEHICLE.zones.find((z) => z.key === nearestZoneKey);
 
     const zoneForStrategy: Zone = {
       key: nearestZoneKey ?? '3d',
@@ -622,7 +655,13 @@ export function evaluateHit3D(opts: {
     };
     const adjacentZoneMap = buildAdjacentZoneMap(VEHICLE.zones);
     const strategy = getPostEffectStrategy(ammo.postPen);
-    const effect = strategy.compute({ ammo, zone: zoneForStrategy, penetrated: true, adjacentZoneMap });
+    const effect = strategy.compute({
+      ammo,
+      zone: zoneForStrategy,
+      penetrated: true,
+      adjacentZoneMap,
+      rng,
+    });
     postPenDamage = effect.postPenDamage;
     crewKilled = effect.crewKilled;
     postEffectDetails = effect.postEffectDetails;
@@ -633,15 +672,31 @@ export function evaluateHit3D(opts: {
   let ricochetDirection: Vector3 | null = null;
   if (ricochet) {
     const dn = vec3Dot(shotDir, normal);
-    ricochetDirection = vec3Normalize(
-      vec3Subtract(shotDir, vec3Scale(normal, 2 * dn))
-    );
+    ricochetDirection = vec3Normalize(vec3Subtract(shotDir, vec3Scale(normal, 2 * dn)));
   }
 
   const resultText = buildResultText(
     ammo,
-    { key: nearestZoneKey ?? '3d', label: armor.label, category: armor.category, armorType: armor.armorType, nominalThickness: armor.nominalThickness, slope: normalAngleDeg, rect: { x: 0, y: 0, w: 0, h: 0 }, labelPos: { x: 0, y: 0 }, damageWeight: 0 },
-    distance, normalAngleDeg, effectiveThickness, shellPen, penetrated, ricochet, armorNeutralized, postPenDamage, crewKilled,
+    {
+      key: nearestZoneKey ?? '3d',
+      label: armor.label,
+      category: armor.category,
+      armorType: armor.armorType,
+      nominalThickness: armor.nominalThickness,
+      slope: normalAngleDeg,
+      rect: { x: 0, y: 0, w: 0, h: 0 },
+      labelPos: { x: 0, y: 0 },
+      damageWeight: 0,
+    },
+    distance,
+    normalAngleDeg,
+    effectiveThickness,
+    shellPen,
+    penetrated,
+    ricochet,
+    armorNeutralized,
+    postPenDamage,
+    crewKilled,
   );
 
   return {
