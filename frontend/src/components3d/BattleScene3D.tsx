@@ -16,13 +16,17 @@ import type { Vector3 } from '../lib/ballistics';
 import { useBattleStore } from '../store/battleStore';
 import VehicleModel, { type ZoneHitInfo } from './VehicleModel';
 import BallisticTrail from './BallisticTrail';
-import HitEffects, { SpecialEventEffects, type HitEffectItem, type SpecialEventEffectItem } from './HitEffects';
+import HitEffects, {
+  SpecialEventEffects,
+  type HitEffectItem,
+  type SpecialEventEffectItem,
+} from './HitEffects';
 
 // ─── Props ───
 export interface BattleScene3DProps {
   vehicle: VehicleDef3D;
   trajectory?: Vector3[];
-  straightTrajectory?: Vector3[];  // 直线轨迹（与 trajectory 互斥，优先使用）
+  straightTrajectory?: Vector3[]; // 直线轨迹（与 trajectory 互斥，优先使用）
   hitResults?: PenetrationResult3D[];
   zoneDamage?: Record<string, number>;
   onZoneClick?: (zoneId: string, hitInfo?: ZoneHitInfo) => void;
@@ -30,8 +34,8 @@ export interface BattleScene3DProps {
   onMuzzlePosChange?: (pos: Vector3) => void; // 炮口位置变化时回调（相机局部偏移 (0,-0.3,-1.5)，与 GuideLine 起点一致）
   tracerColor?: string;
   cameraMode?: CameraMode;
-  showStats?: boolean;           // 显示性能统计
-  replayToken?: number;          // 回放触发令牌，变化时重置弹道动画
+  showStats?: boolean; // 显示性能统计
+  replayToken?: number; // 回放触发令牌，变化时重置弹道动画
   enableProjectileBreak?: boolean; // 炮弹到达终点时是否破裂
   className?: string;
   style?: React.CSSProperties;
@@ -65,37 +69,22 @@ function SceneLighting() {
       <ambientLight intensity={0.8} color="#b0c4de" />
 
       {/* 主光源：模拟太阳光，暖白色 */}
-      <directionalLight
-        position={[10, 10, 5]}
-        intensity={1.2}
-        color="#fff5e6"
-        castShadow={false}
-      />
+      <directionalLight position={[10, 10, 5]} intensity={1.2} color="#fff5e6" castShadow={false} />
 
       {/* 补光：减少阴影死区 */}
       <pointLight position={[-5, 5, -5]} intensity={0.6} color="#ffffff" />
 
       {/* 副方向光：保持轮廓层次 */}
-      <directionalLight
-        position={[-3, 4, 5]}
-        intensity={0.4}
-        color="#aabbcc"
-      />
+      <directionalLight position={[-3, 4, 5]} intensity={0.4} color="#aabbcc" />
 
       {/* 半球光：模拟天光与地面反射 */}
-      <hemisphereLight
-        args={['#87ceeb', '#4a5568', 0.4]}
-      />
+      <hemisphereLight args={['#87ceeb', '#4a5568', 0.4]} />
 
       {/* 底部补光：保留微弱底光 */}
       <pointLight position={[0, -2, 0]} intensity={0.15} color="#445566" distance={10} />
 
       {/* 背面轮廓光：勾勒载具边缘 */}
-      <directionalLight
-        position={[0, 3, -8]}
-        intensity={0.3}
-        color="#6688aa"
-      />
+      <directionalLight position={[0, 3, -8]} intensity={0.3} color="#6688aa" />
 
       {/* 顶部柔光：模拟天光漫射 */}
       <pointLight position={[0, 8, 0]} intensity={0.25} color="#aaccdd" distance={20} />
@@ -110,7 +99,13 @@ function generateEffectId(): string {
 }
 
 // ─── 悬停引导线（useFrame 实时更新，摄像头拖动时首点跟随）───
-function GuideLine({ targetPos, visible }: { targetPos: [number, number, number]; visible: boolean }) {
+function GuideLine({
+  targetPos,
+  visible,
+}: {
+  targetPos: [number, number, number];
+  visible: boolean;
+}) {
   const lineRef = useRef<any>(null);
   const { camera } = useThree();
   // 复用临时向量，避免每帧分配新 Vector3
@@ -124,8 +119,12 @@ function GuideLine({ targetPos, visible }: { targetPos: [number, number, number]
     camera.updateMatrixWorld(); // 确保相机移动/旋转后取到最新 matrixWorld
     const muzzle = camera.localToWorld(tempMuzzle.current.set(0, -0.3, -1.5));
     line.geometry.setPositions([
-      muzzle.x, muzzle.y, muzzle.z,
-      targetPos[0], targetPos[1], targetPos[2],
+      muzzle.x,
+      muzzle.y,
+      muzzle.z,
+      targetPos[0],
+      targetPos[1],
+      targetPos[2],
     ]);
     line.computeLineDistances();
   });
@@ -133,10 +132,12 @@ function GuideLine({ targetPos, visible }: { targetPos: [number, number, number]
   return (
     <Line
       ref={lineRef}
-      points={[
-        [0, 0, 0],
-        [0, 0, 1],
-      ] as any}
+      points={
+        [
+          [0, 0, 0],
+          [0, 0, 1],
+        ] as any
+      }
       color="#ffaa00"
       lineWidth={2}
       dashed={true}
@@ -162,7 +163,7 @@ interface SceneContentProps {
   enableProjectileBreak: boolean;
   onZoneClickExternal?: (zoneId: string, hitInfo?: ZoneHitInfo) => void;
   onHoveredZonePosChange: (pos: [number, number, number] | null) => void;
-  onZoneClickInternal: (zoneId: string) => void;
+  onZoneClickInternal?: (zoneId: string) => void;
   onZoneIdChange?: (zoneId: string | null) => void;
   onCameraPositionChange?: (pos: Vector3) => void;
   onMuzzlePosChange?: (pos: Vector3) => void;
@@ -189,9 +190,9 @@ const SceneContent = forwardRef<THREE.Camera, SceneContentProps>(function SceneC
   cameraRef,
 ) {
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
-  const camera = useThree(state => state.camera);
-  const replaySpeed = useBattleStore(s => s.replaySpeed);
-  const chainEvents = useBattleStore(s => s.chainEvents);
+  const camera = useThree((state) => state.camera);
+  const replaySpeed = useBattleStore((s) => s.replaySpeed);
+  const chainEvents = useBattleStore((s) => s.chainEvents);
 
   // 摄像头位置实时追踪（OrbitControls 会改变摄像头位置）
   const cameraPosRef = useRef(new THREE.Vector3());
@@ -216,7 +217,9 @@ const SceneContent = forwardRef<THREE.Camera, SceneContentProps>(function SceneC
   }, [camera, cameraRef]);
 
   // 引导线目标位置（分区世界坐标）
-  const [hoveredZoneWorldPos, setHoveredZoneWorldPos] = useState<[number, number, number] | null>(null);
+  const [hoveredZoneWorldPos, setHoveredZoneWorldPos] = useState<[number, number, number] | null>(
+    null,
+  );
   // 引导线延迟清除定时器：hover out 后延迟约 150ms 再隐藏，避免鼠标快速滑过分区边界时闪烁断裂
   const hideGuideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -244,52 +247,61 @@ const SceneContent = forwardRef<THREE.Camera, SceneContentProps>(function SceneC
         result,
         position: result.impactPoint3D,
       }));
-      setHitEffects(prev => [...prev, ...newEffects]);
+      setHitEffects((prev) => [...prev, ...newEffects]);
       prevHitCount.current = hitResults.length;
     }
   }, [hitResults]);
 
-  const handleZoneClick = useCallback((zoneId: string, hitInfo?: ZoneHitInfo) => {
-    setSelectedZoneId(zoneId);
-    // 点击开火：立即同步清除引导线（取消延迟清除定时器），保留“开火后隐藏引导线”语义
-    if (hideGuideTimerRef.current !== null) {
-      clearTimeout(hideGuideTimerRef.current);
-      hideGuideTimerRef.current = null;
-    }
-    setHoveredZoneWorldPos(null);
-    onZoneClickExternal?.(zoneId, hitInfo);
-    onZoneIdChange?.(zoneId);
-    onZoneClickInternal(zoneId);
-  }, [onZoneClickExternal, onZoneClickInternal, onZoneIdChange]);
-
-  const handleZoneHover = useCallback((zoneId: string | null) => {
-    onZoneIdChange?.(zoneId);
-  }, [onZoneIdChange]);
-
-  const handleWorldPosHover = useCallback((worldPos: [number, number, number] | null) => {
-    // 悬停引导线延迟清除：非 null 时取消定时器并立即更新；null 时延迟 150ms 再隐藏
-    if (hideGuideTimerRef.current !== null) {
-      clearTimeout(hideGuideTimerRef.current);
-      hideGuideTimerRef.current = null;
-    }
-    if (worldPos !== null) {
-      setHoveredZoneWorldPos(worldPos);
-    } else {
-      hideGuideTimerRef.current = setTimeout(() => {
+  const handleZoneClick = useCallback(
+    (zoneId: string, hitInfo?: ZoneHitInfo) => {
+      setSelectedZoneId(zoneId);
+      // 点击开火：立即同步清除引导线（取消延迟清除定时器），保留“开火后隐藏引导线”语义
+      if (hideGuideTimerRef.current !== null) {
+        clearTimeout(hideGuideTimerRef.current);
         hideGuideTimerRef.current = null;
-        setHoveredZoneWorldPos(null);
-      }, 150);
-    }
-    // 外部回调保持同步直传
-    onHoveredZonePosChange(worldPos);
-  }, [onHoveredZonePosChange]);
+      }
+      setHoveredZoneWorldPos(null);
+      onZoneClickExternal?.(zoneId, hitInfo);
+      onZoneIdChange?.(zoneId);
+      onZoneClickInternal?.(zoneId);
+    },
+    [onZoneClickExternal, onZoneClickInternal, onZoneIdChange],
+  );
+
+  const handleZoneHover = useCallback(
+    (zoneId: string | null) => {
+      onZoneIdChange?.(zoneId);
+    },
+    [onZoneIdChange],
+  );
+
+  const handleWorldPosHover = useCallback(
+    (worldPos: [number, number, number] | null) => {
+      // 悬停引导线延迟清除：非 null 时取消定时器并立即更新；null 时延迟 150ms 再隐藏
+      if (hideGuideTimerRef.current !== null) {
+        clearTimeout(hideGuideTimerRef.current);
+        hideGuideTimerRef.current = null;
+      }
+      if (worldPos !== null) {
+        setHoveredZoneWorldPos(worldPos);
+      } else {
+        hideGuideTimerRef.current = setTimeout(() => {
+          hideGuideTimerRef.current = null;
+          setHoveredZoneWorldPos(null);
+        }, 150);
+      }
+      // 外部回调保持同步直传
+      onHoveredZonePosChange(worldPos);
+    },
+    [onHoveredZonePosChange],
+  );
 
   const handleEffectComplete = useCallback((id: string) => {
-    setHitEffects(prev => prev.filter(e => e.id !== id));
+    setHitEffects((prev) => prev.filter((e) => e.id !== id));
   }, []);
 
   const handleSpecialComplete = useCallback((id: string) => {
-    setSpecialEffects(prev => prev.filter(e => e.id !== id));
+    setSpecialEffects((prev) => prev.filter((e) => e.id !== id));
   }, []);
 
   // 炮弹命中回调
@@ -301,7 +313,7 @@ const SceneContent = forwardRef<THREE.Camera, SceneContentProps>(function SceneC
       result: lastResult,
       position: lastResult.impactPoint3D,
     };
-    setHitEffects(prev => [...prev, newEffect]);
+    setHitEffects((prev) => [...prev, newEffect]);
   }, [hitResults]);
 
   // 当 chainEvents 变化时，生成特殊事件效果
@@ -313,7 +325,7 @@ const SceneContent = forwardRef<THREE.Camera, SceneContentProps>(function SceneC
         id: `special_${Date.now()}_${i}`,
         event,
       }));
-      setSpecialEffects(prev => [...prev, ...newSpecial]);
+      setSpecialEffects((prev) => [...prev, ...newSpecial]);
       prevChainCount.current = chainEvents.length;
     }
   }, [chainEvents]);
@@ -324,7 +336,7 @@ const SceneContent = forwardRef<THREE.Camera, SceneContentProps>(function SceneC
     // 统一置换 (x,y,z)→(z,x,y)，经 BallisticTrail 的 vec3ToTuple [v.y, v.z, v.x] 还原后输出真实场景坐标
     // 首点为开火瞬间的摄像头位置（由 BattleArena 在生成时固化为 shotOrigin）
     if (straightTrajectory && straightTrajectory.length >= 2) {
-      return straightTrajectory.map(p => ({ x: p.z, y: p.x, z: p.y }));
+      return straightTrajectory.map((p) => ({ x: p.z, y: p.x, z: p.y }));
     }
 
     // 抛物线轨迹：弹道坐标系，保持原逻辑（仅替换第一个点为摄像头位置）
@@ -338,10 +350,7 @@ const SceneContent = forwardRef<THREE.Camera, SceneContentProps>(function SceneC
     // 用摄像头 Three.js 坐标替换第一个点
     // BallisticTrail 的 vec3ToTuple: [v.y+offset[0], v.z+offset[1], v.x+offset[2]]
     // 设 v.y=cx, v.z=cy, v.x=cz → 渲染位置 = [cx, cy, cz] = 摄像头位置
-    const overridden: Vector3[] = [
-      { x: cz, y: cx, z: cy },
-      ...base.slice(1),
-    ];
+    const overridden: Vector3[] = [{ x: cz, y: cx, z: cy }, ...base.slice(1)];
     return overridden;
   }, [straightTrajectory, trajectory]);
 
@@ -365,7 +374,10 @@ const SceneContent = forwardRef<THREE.Camera, SceneContentProps>(function SceneC
 
       {/* 引导线：从炮口到 hover 分区（黄色虚线，useFrame 实时跟随摄像头拖动）
           常驻挂载 + visible 切换，避免每次 hover in/out mount/unmount 导致整条线闪烁断裂 */}
-      <GuideLine targetPos={hoveredZoneWorldPos ?? [0, 0, 0]} visible={hoveredZoneWorldPos !== null} />
+      <GuideLine
+        targetPos={hoveredZoneWorldPos ?? [0, 0, 0]}
+        visible={hoveredZoneWorldPos !== null}
+      />
 
       {/* 载具模型 */}
       <VehicleModel
@@ -391,16 +403,10 @@ const SceneContent = forwardRef<THREE.Camera, SceneContentProps>(function SceneC
       )}
 
       {/* 命中效果 */}
-      <HitEffects
-        effects={hitEffects}
-        onEffectComplete={handleEffectComplete}
-      />
+      <HitEffects effects={hitEffects} onEffectComplete={handleEffectComplete} />
 
       {/* 特殊事件效果 */}
-      <SpecialEventEffects
-        events={specialEffects}
-        onEffectComplete={handleSpecialComplete}
-      />
+      <SpecialEventEffects events={specialEffects} onEffectComplete={handleSpecialComplete} />
 
       {/* 轨道控制器 */}
       <OrbitControls
@@ -437,7 +443,6 @@ export default function BattleScene3D({
   className,
   style,
 }: BattleScene3DProps) {
-  const [hoveredZonePos, setHoveredZonePos] = useState<[number, number, number] | null>(null);
   const [hoveredZoneId, setHoveredZoneId] = useState<string | null>(null);
   const cameraRef = useRef<THREE.Camera>(null);
 
@@ -456,13 +461,7 @@ export default function BattleScene3D({
 
   // 引导线位置变化时同步 hoveredZoneId（通过 SceneContent 回调）
   const handleHoveredZonePosChange = useCallback((pos: [number, number, number] | null) => {
-    setHoveredZonePos(pos);
     if (!pos) setHoveredZoneId(null);
-  }, []);
-
-  // 内部点击处理（SceneContent 调用，用于清除引导线）
-  const handleZoneClickInternal = useCallback((_zoneId: string) => {
-    setHoveredZonePos(null);
   }, []);
 
   // 悬停分区 ID 同步（useCallback 稳定引用：内联箭头函数每次渲染产生新引用，
@@ -497,7 +496,7 @@ export default function BattleScene3D({
           toneMapping: THREE.ACESFilmicToneMapping,
           toneMappingExposure: 1.3,
         }}
-        dpr={[1, 1.5]}  // 限制像素比，低性能模式
+        dpr={[1, 1.5]} // 限制像素比，低性能模式
       >
         <SceneContent
           vehicle={vehicle}
@@ -511,7 +510,6 @@ export default function BattleScene3D({
           enableProjectileBreak={enableProjectileBreak}
           onZoneClickExternal={onZoneClick}
           onHoveredZonePosChange={handleHoveredZonePosChange}
-          onZoneClickInternal={handleZoneClickInternal}
           onZoneIdChange={handleZoneIdChange}
           onCameraPositionChange={onCameraPositionChange}
           onMuzzlePosChange={onMuzzlePosChange}
@@ -521,18 +519,20 @@ export default function BattleScene3D({
 
       {/* Hover 信息覆盖层 */}
       {hoveredZoneId && (
-        <div style={{
-          position: 'absolute',
-          bottom: '12px',
-          left: '12px',
-          color: '#aabbcc',
-          fontSize: '12px',
-          fontFamily: 'monospace',
-          background: 'rgba(0,0,0,0.6)',
-          padding: '4px 8px',
-          borderRadius: '4px',
-          pointerEvents: 'none',
-        }}>
+        <div
+          style={{
+            position: 'absolute',
+            bottom: '12px',
+            left: '12px',
+            color: '#aabbcc',
+            fontSize: '12px',
+            fontFamily: 'monospace',
+            background: 'rgba(0,0,0,0.6)',
+            padding: '4px 8px',
+            borderRadius: '4px',
+            pointerEvents: 'none',
+          }}
+        >
           分区: {hoveredZoneId}
           {zoneDamage[hoveredZoneId] !== undefined && ` | 伤害: ${zoneDamage[hoveredZoneId]}%`}
         </div>

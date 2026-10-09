@@ -5,7 +5,7 @@
  */
 import React, { useRef, useState, useCallback, useMemo, Suspense } from 'react';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
-import { Html, useGLTF } from '@react-three/drei';
+import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import type { VehicleDef3D, Zone3DDef, Zone3D } from '../data/types3d';
 import { mirrorZone3D } from '../data/vehicle3d';
@@ -30,38 +30,46 @@ function getHealthState(health: number, damage: number): ZoneHealthState {
 
 function getStateColor(baseColor: string, state: ZoneHealthState): string {
   switch (state) {
-    case 'destroyed': return '#ff4d4d';
-    case 'orange': return '#ff9a3c';
-    case 'yellow': return '#f5d142';
-    case 'healthy': return baseColor;
+    case 'destroyed':
+      return '#ff4d4d';
+    case 'orange':
+      return '#ff9a3c';
+    case 'yellow':
+      return '#f5d142';
+    case 'healthy':
+      return baseColor;
   }
 }
 
 // 判断分区是否处于起火状态
 function isZoneOnFire(zoneId: string, vehicleState: string): boolean {
   switch (vehicleState) {
-    case 'engine_fire': return zoneId === 'engine';
-    case 'fuel_fire': return zoneId === 'fuel';
-    case 'ammo_cookoff': return zoneId === 'ammo';
-    default: return false;
+    case 'engine_fire':
+      return zoneId === 'engine';
+    case 'fuel_fire':
+      return zoneId === 'fuel';
+    case 'ammo_cookoff':
+      return zoneId === 'ammo';
+    default:
+      return false;
   }
 }
 
 // ─── 3D 命中信息（由 R3F 拾取事件提取，随点击回调透传）───
 export interface ZoneHitInfo {
-  point: [number, number, number];   // 世界坐标系真实命中点
-  normal: [number, number, number];  // 世界坐标系面法线（单位向量，经 normalMatrix 变换）
+  point: [number, number, number]; // 世界坐标系真实命中点
+  normal: [number, number, number]; // 世界坐标系面法线（单位向量，经 normalMatrix 变换）
 }
 
 // ─── Props ───
 export interface VehicleModelProps {
   vehicle: VehicleDef3D;
-  zoneDamage?: Record<string, number>;  // 各分区累计伤害
-  selectedZoneId?: string | null;        // 当前选中分区
+  zoneDamage?: Record<string, number>; // 各分区累计伤害
+  selectedZoneId?: string | null; // 当前选中分区
   onZoneClick?: (zoneId: string, hitInfo?: ZoneHitInfo) => void;
   onZoneHover?: (zoneId: string | null) => void;
   onWorldPosHover?: (worldPos: [number, number, number] | null) => void;
-  modelUrl?: string;                     // 可选 GLB 模型路径
+  modelUrl?: string; // 可选 GLB 模型路径
   visible?: boolean;
 }
 
@@ -76,7 +84,15 @@ interface ZoneMeshProps {
   onWorldPosHover?: (worldPos: [number, number, number] | null) => void;
 }
 
-const ZoneMesh = React.memo(function ZoneMesh({ zone, healthState, isSelected, isOnFire, onClick, onHover, onWorldPosHover }: ZoneMeshProps) {
+const ZoneMesh = React.memo(function ZoneMesh({
+  zone,
+  healthState,
+  isSelected,
+  isOnFire,
+  onClick,
+  onHover,
+  onWorldPosHover,
+}: ZoneMeshProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const [hovered, setHovered] = useState(false);
 
@@ -125,21 +141,24 @@ const ZoneMesh = React.memo(function ZoneMesh({ zone, healthState, isSelected, i
 
   const emissiveIntensity = isOnFire ? 0.5 : isSelected ? 0.6 : hovered ? 0.3 : 0.1;
 
-  const handlePointerOver = useCallback((e: ThreeEvent<PointerEvent>) => {
-    e.stopPropagation();
-    setHovered(true);
-    onHover(zone.id);
-    if (onWorldPosHover) {
-      // 优先使用真实指针交点作为引导线终点（比分区中心更精确）
-      if (e.point) {
-        onWorldPosHover([e.point.x, e.point.y, e.point.z]);
-      } else if (meshRef.current) {
-        const wp = new THREE.Vector3();
-        meshRef.current.getWorldPosition(wp);
-        onWorldPosHover([wp.x, wp.y, wp.z]);
+  const handlePointerOver = useCallback(
+    (e: ThreeEvent<PointerEvent>) => {
+      e.stopPropagation();
+      setHovered(true);
+      onHover(zone.id);
+      if (onWorldPosHover) {
+        // 优先使用真实指针交点作为引导线终点（比分区中心更精确）
+        if (e.point) {
+          onWorldPosHover([e.point.x, e.point.y, e.point.z]);
+        } else if (meshRef.current) {
+          const wp = new THREE.Vector3();
+          meshRef.current.getWorldPosition(wp);
+          onWorldPosHover([wp.x, wp.y, wp.z]);
+        }
       }
-    }
-  }, [zone.id, onHover, onWorldPosHover]);
+    },
+    [zone.id, onHover, onWorldPosHover],
+  );
 
   // 指针在装甲面上滑动时逐帧更新引导线终点：
   // stopPropagation 保证仅最上层（被 hover）分区处理，指针滑过不同分区时终点连续跟随而非跨区跳变；
@@ -157,21 +176,24 @@ const ZoneMesh = React.memo(function ZoneMesh({ zone, healthState, isSelected, i
     onWorldPosHover?.(null);
   }, [onHover, onWorldPosHover]);
 
-  const handleClick = useCallback((e: ThreeEvent<MouseEvent>) => {
-    e.stopPropagation();
-    // 提取真实世界交点与面法线：
-    // 面法线经 normalMatrix 变换到世界系（非均匀缩放场景必须走 normalMatrix，不能直接乘 modelMatrix）
-    let hitInfo: ZoneHitInfo | undefined;
-    if (e.face && e.object) {
-      const normalMatrix = new THREE.Matrix3().getNormalMatrix(e.object.matrixWorld);
-      const worldNormal = e.face.normal.clone().applyMatrix3(normalMatrix).normalize();
-      hitInfo = {
-        point: [e.point.x, e.point.y, e.point.z],
-        normal: [worldNormal.x, worldNormal.y, worldNormal.z],
-      };
-    }
-    onClick(zone.id, hitInfo);
-  }, [zone.id, onClick]);
+  const handleClick = useCallback(
+    (e: ThreeEvent<MouseEvent>) => {
+      e.stopPropagation();
+      // 提取真实世界交点与面法线：
+      // 面法线经 normalMatrix 变换到世界系（非均匀缩放场景必须走 normalMatrix，不能直接乘 modelMatrix）
+      let hitInfo: ZoneHitInfo | undefined;
+      if (e.face && e.object) {
+        const normalMatrix = new THREE.Matrix3().getNormalMatrix(e.object.matrixWorld);
+        const worldNormal = e.face.normal.clone().applyMatrix3(normalMatrix).normalize();
+        hitInfo = {
+          point: [e.point.x, e.point.y, e.point.z],
+          normal: [worldNormal.x, worldNormal.y, worldNormal.z],
+        };
+      }
+      onClick(zone.id, hitInfo);
+    },
+    [zone.id, onClick],
+  );
 
   const collision = zone.collision;
   const visual = zone.visual ?? collision;
@@ -242,25 +264,28 @@ function ZoneGeometry({
   onPointerMove,
 }: ZoneGeometryProps) {
   // 使用共享 Geometry，通过 scale 实现尺寸变化，避免重复创建 Geometry
-  const geometry = zone.type === 'box'
-    ? SHARED_GEOMETRIES.unitBox
-    : SHARED_GEOMETRIES.unitSphere;
+  const geometry = zone.type === 'box' ? SHARED_GEOMETRIES.unitBox : SHARED_GEOMETRIES.unitSphere;
 
   // 材质参数 memo 化
-  const materialProps = useMemo(() => ({
-    color,
-    emissive,
-    emissiveIntensity,
-    transparent: !visible,
-    opacity: visible ? 1 : 0,
-    roughness: 0.7,
-    metalness: 0.3,
-  }), [color, emissive, emissiveIntensity, visible]);
+  const materialProps = useMemo(
+    () => ({
+      color,
+      emissive,
+      emissiveIntensity,
+      transparent: !visible,
+      opacity: visible ? 1 : 0,
+      roughness: 0.7,
+      metalness: 0.3,
+    }),
+    [color, emissive, emissiveIntensity, visible],
+  );
 
   if (zone.type === 'box') {
     const [sx, sy, sz] = zone.size;
     const [px, py, pz] = zone.position;
-    const rot = zone.rotation ? zone.rotation.map(r => (r * Math.PI) / 180) as [number, number, number] : undefined;
+    const rot = zone.rotation
+      ? (zone.rotation.map((r) => (r * Math.PI) / 180) as [number, number, number])
+      : undefined;
     return (
       <mesh
         ref={meshRef}
@@ -318,13 +343,7 @@ function ZoneGeometry({
 // ─── GLB 模型加载器（可选） ───
 function GLBModel({ url, onClick }: { url: string; onClick?: (e: any) => void }) {
   const { scene } = useGLTF(url);
-  return (
-    <primitive
-      object={scene}
-      onClick={onClick}
-      scale={[1, 1, 1]}
-    />
-  );
+  return <primitive object={scene} onClick={onClick} scale={[1, 1, 1]} />;
 }
 
 // ─── 主组件 ───
@@ -339,7 +358,7 @@ export default function VehicleModel({
   visible = true,
 }: VehicleModelProps) {
   const groupRef = useRef<THREE.Group>(null);
-  const vehicleState = useBattleStore(s => s.vehicleState);
+  const vehicleState = useBattleStore((s) => s.vehicleState);
 
   // 简单浮动动画
   useFrame((state) => {
@@ -348,44 +367,55 @@ export default function VehicleModel({
     }
   });
 
-  const handleZoneClick = useCallback((zoneId: string, hitInfo?: ZoneHitInfo) => {
-    onZoneClick?.(zoneId, hitInfo);
-  }, [onZoneClick]);
+  const handleZoneClick = useCallback(
+    (zoneId: string, hitInfo?: ZoneHitInfo) => {
+      onZoneClick?.(zoneId, hitInfo);
+    },
+    [onZoneClick],
+  );
 
-  const handleZoneHover = useCallback((zoneId: string | null) => {
-    onZoneHover?.(zoneId);
-  }, [onZoneHover]);
+  const handleZoneHover = useCallback(
+    (zoneId: string | null) => {
+      onZoneHover?.(zoneId);
+    },
+    [onZoneHover],
+  );
 
-  const handleWorldPosHover = useCallback((worldPos: [number, number, number] | null) => {
-    onWorldPosHover?.(worldPos);
-  }, [onWorldPosHover]);
+  const handleWorldPosHover = useCallback(
+    (worldPos: [number, number, number] | null) => {
+      onWorldPosHover?.(worldPos);
+    },
+    [onWorldPosHover],
+  );
 
   const offset = vehicle.modelOffset ?? [0, 0, 0];
 
   return (
     <group ref={groupRef} position={[offset[0], offset[1], offset[2]]} visible={visible}>
       {modelUrl ? (
-        <Suspense fallback={
-          // 加载中占位：显示所有分区几何体
-          vehicle.zones.map((zone) => {
-            const health = zone.health;
-            const damage = zoneDamage[zone.id] ?? 0;
-            const state = getHealthState(health, damage);
-            const onFire = isZoneOnFire(zone.id, vehicleState);
-            return (
-              <ZoneMesh
-                key={zone.id}
-                zone={zone}
-                healthState={state}
-                isSelected={selectedZoneId === zone.id}
-                isOnFire={onFire}
-                onClick={handleZoneClick}
-                onHover={handleZoneHover}
-                onWorldPosHover={handleWorldPosHover}
-              />
-            );
-          })
-        }>
+        <Suspense
+          fallback={
+            // 加载中占位：显示所有分区几何体
+            vehicle.zones.map((zone) => {
+              const health = zone.health;
+              const damage = zoneDamage[zone.id] ?? 0;
+              const state = getHealthState(health, damage);
+              const onFire = isZoneOnFire(zone.id, vehicleState);
+              return (
+                <ZoneMesh
+                  key={zone.id}
+                  zone={zone}
+                  healthState={state}
+                  isSelected={selectedZoneId === zone.id}
+                  isOnFire={onFire}
+                  onClick={handleZoneClick}
+                  onHover={handleZoneHover}
+                  onWorldPosHover={handleWorldPosHover}
+                />
+              );
+            })
+          }
+        >
           <GLBModel url={modelUrl} />
         </Suspense>
       ) : (

@@ -20,11 +20,19 @@ const BattleScene3D = lazy(() => import('../components3d/BattleScene3D'));
 
 function Scene3DFallback() {
   return (
-    <div style={{
-      width: '100%', height: '100%', minHeight: 400,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: '#0d1117', color: '#6f8499', fontSize: 13,
-    }}>
+    <div
+      style={{
+        width: '100%',
+        height: '100%',
+        minHeight: 400,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: '#0d1117',
+        color: '#6f8499',
+        fontSize: 13,
+      }}
+    >
       加载3D场景…
     </div>
   );
@@ -33,8 +41,18 @@ function Scene3DFallback() {
 export default function BattleArena() {
   const navigate = useNavigate();
   const {
-    ammoId, distance, hits, current, zoneDamage, use3DView,
-    setAmmo, setDistance, fireAtZone, fireRandom, closeAnalysis, reset,
+    ammoId,
+    distance,
+    hits,
+    current,
+    zoneDamage,
+    use3DView,
+    setAmmo,
+    setDistance,
+    fireAtZone,
+    fireRandom,
+    closeAnalysis,
+    reset,
   } = useBattleStore();
   const ammo = getAmmo(ammoId);
   const penNow = penAt(ammo, distance);
@@ -209,15 +227,22 @@ export default function BattleArena() {
     });
 
     // 写入 store（显示轨迹由 lastHit 派生：coordSpace='three' 时直用 simResult.trajectory）
-    const { hits: currentHits, zoneDamage: currentZoneDamage, vehicleConfig } = useBattleStore.getState();
+    const {
+      hits: currentHits,
+      zoneDamage: currentZoneDamage,
+      vehicleConfig,
+    } = useBattleStore.getState();
     const newRemainingAmmo = Math.max(0, vehicleConfig.remainingAmmo - 1);
 
     // 计算 zoneDamage
     const zone2d = VEHICLE.zones.find((z) => z.key === zoneId) ?? null;
     const key = zone2d ? zone2d.key : null;
-    let newZoneDamage = { ...currentZoneDamage };
+    const newZoneDamage = { ...currentZoneDamage };
     if (key && simResult.result.postPenDamage > 0) {
-      newZoneDamage[key] = Math.min(100, (newZoneDamage[key] || 0) + simResult.result.postPenDamage);
+      newZoneDamage[key] = Math.min(
+        100,
+        (newZoneDamage[key] || 0) + simResult.result.postPenDamage,
+      );
     }
 
     useBattleStore.setState({
@@ -280,7 +305,10 @@ export default function BattleArena() {
             />
           )}
 
-          <div className="crosshair" style={{ left: 16, top: 14, color: 'var(--txt-dim)', fontSize: 12 }}>
+          <div
+            className="crosshair"
+            style={{ left: 16, top: 14, color: 'var(--txt-dim)', fontSize: 12 }}
+          >
             点击敌方载具任意部位开火 · 当前弹种穿深 @ {distance}m ≈ {penNow.toFixed(0)}mm
           </div>
         </div>

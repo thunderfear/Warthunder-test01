@@ -61,7 +61,7 @@ describe('fuelFireProbability', () => {
   it('燃油=0 → 使用 fuelFactor=0.1（最低保底）', () => {
     const p = fuelFireProbability('APHE', 'gasoline', 0, false);
     // 0.50 * 2.0 * 0.1 * 1.0 = 0.10
-    expect(p).toBeCloseTo(0.10, 3);
+    expect(p).toBeCloseTo(0.1, 3);
   });
 
   it('概率不超过1', () => {
@@ -164,25 +164,15 @@ describe('calculateOverpressure', () => {
     // 手动计算原始超压
     const W = 0.5;
     const R = 3.0;
-    const raw = 0.84 * Math.cbrt(W) / R
-      + 2.7 * Math.pow(W, 2 / 3) / (R * R)
-      + 7.06 * W / (R * R * R);
+    const raw =
+      (0.84 * Math.cbrt(W)) / R + (2.7 * Math.pow(W, 2 / 3)) / (R * R) + (7.06 * W) / (R * R * R);
     const effective = raw * 1.5;
     expect(r.overpressureKPa).toBeCloseTo(effective, 3);
   });
 
-  it('中等超压 → damage=80（49<effective≤98）', () => {
-    // 找一个中等装药和距离使 effective 在 49~98 之间
-    const r = calculateOverpressure(1.0, 2.0);
-    // W=1, R=2: raw = 0.84*1/2 + 2.7*1/4 + 7.06*1/8 = 0.42+0.675+0.8825 = 1.9775
-    // effective = 1.9775 * 1.5 = 2.966 → damage=0
-    // 需要更近的距离或更大装药
-    const r2 = calculateOverpressure(3.0, 1.5);
-    // W=3, R=1.5: raw = 0.84*cbrt(3)/1.5 + 2.7*3^(2/3)/2.25 + 7.06*3/3.375
-    // = 0.84*1.442/1.5 + 2.7*2.08/2.25 + 21.18/3.375
-    // = 0.807 + 2.496 + 6.276 = 9.579
-    // effective = 9.579 * 1.5 = 14.37 → damage=0
-    // 需要更极端参数
+  it('高超压 → damage=100（effective>98）', () => {
+    // 中低参数（如 W=1/R=2、W=3/R=1.5）经手算 effective 均 ≤ 98（damage=0 区间），
+    // 采用极端参数 W=10kg、R=1m 验证高档位伤害
     const r3 = calculateOverpressure(10.0, 1.0);
     expect(r3.overpressureKPa).toBeGreaterThan(98);
     expect(r3.damage).toBe(100);
@@ -202,7 +192,7 @@ describe('generateSpallCone', () => {
     const result = generateSpallCone('ammo', 30, 5, 80, adjacentZones);
     expect(result.length).toBeGreaterThan(0);
     // ammo 的直接邻居: gunner, transmission
-    const zoneKeys = result.map(r => r.zoneKey);
+    const zoneKeys = result.map((r) => r.zoneKey);
     expect(zoneKeys).toContain('gunner');
     expect(zoneKeys).toContain('transmission');
   });
@@ -240,7 +230,7 @@ describe('generateSpallCone', () => {
     for (let i = 0; i < 50; i++) {
       const result = generateSpallCone('A', 30, 5, baseDamage, chainMap);
       // B is direct neighbor (40-70%), C is second-level (10-25%)
-      const cEntry = result.find(r => r.zoneKey === 'C');
+      const cEntry = result.find((r) => r.zoneKey === 'C');
       if (cEntry) {
         expect(cEntry.damage).toBeGreaterThanOrEqual(5);
         expect(cEntry.damage).toBeLessThanOrEqual(30);

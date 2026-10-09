@@ -3,7 +3,6 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { getBattle, updateBattle, type BattleDTO } from '../api/client';
 import VehicleSchematic from './VehicleSchematic';
 import StatsPanel from './StatsPanel';
-import { VEHICLE } from '../data/vehicle';
 import { VEHICLE_3D } from '../data/vehicle3d';
 import { useBattleStore } from '../store/battleStore';
 import type { SimHit } from '../lib/HitSimulator';
@@ -12,11 +11,19 @@ const BattleScene3D = lazy(() => import('../components3d/BattleScene3D'));
 
 function Scene3DFallback() {
   return (
-    <div style={{
-      width: '100%', height: '100%', minHeight: 400,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: '#0d1117', color: '#6f8499', fontSize: 13,
-    }}>
+    <div
+      style={{
+        width: '100%',
+        height: '100%',
+        minHeight: 400,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: '#0d1117',
+        color: '#6f8499',
+        fontSize: 13,
+      }}
+    >
       加载3D场景…
     </div>
   );
@@ -118,18 +125,11 @@ export default function BattleReview() {
           {use3DView ? (
             <div className="canvas-container">
               <Suspense fallback={<Scene3DFallback />}>
-                <BattleScene3D
-                  vehicle={VEHICLE_3D}
-                  zoneDamage={zoneDamage}
-                />
+                <BattleScene3D vehicle={VEHICLE_3D} zoneDamage={zoneDamage} />
               </Suspense>
             </div>
           ) : (
-            <VehicleSchematic
-              hits={simHits}
-              zoneDamage={zoneDamage}
-              highlightKey={lastZone}
-            />
+            <VehicleSchematic hits={simHits} zoneDamage={zoneDamage} highlightKey={lastZone} />
           )}
         </div>
 
@@ -140,7 +140,15 @@ export default function BattleReview() {
             <div className="panel-title">逐发命中时间线（{battle.hits.length}）</div>
             <div className="feed">
               {battle.hits.map((h) => {
-                const cls = h.missed ? 'miss' : h.armorNeutralized ? 'neu' : h.ricochet ? 'ric' : h.penetrated ? 'pen' : 'miss';
+                const cls = h.missed
+                  ? 'miss'
+                  : h.armorNeutralized
+                    ? 'neu'
+                    : h.ricochet
+                      ? 'ric'
+                      : h.penetrated
+                        ? 'pen'
+                        : 'miss';
                 return (
                   <div key={h.seq} className={`feed-item ${cls}`}>
                     #{h.seq} · {h.ammoId} · {h.distance}m · {h.resultText}
