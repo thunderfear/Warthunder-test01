@@ -59,10 +59,14 @@ const UpdateBattleSchema = z
 function safeError(error: unknown): string {
   return process.env.NODE_ENV === 'production'
     ? '服务器内部错误'
-    : (error instanceof Error ? error.message : String(error));
+    : error instanceof Error
+      ? error.message
+      : String(error);
 }
 
-function mapHit(h: any) {
+type HitInput = z.infer<typeof HitSchema>;
+
+function mapHit(h: HitInput) {
   return {
     seq: h.seq,
     timeOffset: h.timeOffset,
@@ -124,8 +128,31 @@ router.post('/', async (req, res) => {
 });
 
 // GET /battles — 获取战斗列表（含错误处理）
-router.get('/', async (_req, res) => {
+// 支持 ?page=&pageSize= 分页（返回 { items, total, page, pageSize }）；无参数时保持旧行为返回数组（向后兼容）
+router.get('/', async (req, res) => {
   try {
+    const page = Number(req.query.page);
+    const pageSize = Number(req.query.pageSize);
+    const paginated =
+      Number.isInteger(page) &&
+      page >= 1 &&
+      Number.isInteger(pageSize) &&
+      pageSize >= 1 &&
+      pageSize <= 200;
+
+    if (paginated) {
+      const [items, total] = await Promise.all([
+        prisma.battle.findMany({
+          include: { hits: true },
+          orderBy: { createdAt: 'desc' },
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+        }),
+        prisma.battle.count(),
+      ]);
+      return res.json({ items, total, page, pageSize });
+    }
+
     const battles = await prisma.battle.findMany({
       include: { hits: true },
       orderBy: { createdAt: 'desc' },
