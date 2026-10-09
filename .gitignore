@@ -7,9 +7,11 @@ dist/
 
 # 本地数据库（可重新生成）
 backend/prisma/dev.db
+backend/prisma/test.db*
 
 # 本地环境变量
 *.local
+backend/.env
 
 # 分析输出
 .qoder/

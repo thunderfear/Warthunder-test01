@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  quality:
+    name: Lint + Test + Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install root tooling (eslint/prettier)
+        run: npm install
+
+      - name: Lint (frontend + backend)
+        run: npm run lint
+
+      - name: Ensure backend/.env is not tracked
+        run: |
+          if git ls-files --error-unmatch backend/.env 2>/dev/null; then
+            echo "::error::backend/.env must not be tracked by git"
+            exit 1
+          fi
+
+      - name: Install frontend deps
+        run: npm --prefix frontend ci
+
+      - name: Unit tests + coverage gate (lib/ lines ≥ 80%)
+        run: npm --prefix frontend run test -- --coverage
+
+      - name: Build frontend
+        run: npm --prefix frontend run build
+
+      - name: Install backend deps (runs prisma generate via postinstall)
+        run: npm --prefix backend ci
+
+      - name: Backend unit tests
+        run: npm --prefix backend run test
+
+      - name: Build backend (tsc)
+        run: npm --prefix backend run build
