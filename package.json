@@ -1,0 +1,37 @@
+{
+  "name": "wt-hit-analysis",
+  "private": true,
+  "version": "0.1.0",
+  "description": "War Thunder 击中分析复刻 — 前后端统一编排入口",
+  "scripts": {
+    "dev": "concurrently -n backend,frontend -c blue,green \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "install:all": "npm --prefix backend install && npm --prefix frontend install",
+    "lint": "eslint frontend/src backend/src",
+    "lint:fix": "eslint frontend/src backend/src --fix",
+    "format": "prettier --write \"frontend/src/**/*.{ts,tsx,css}\" \"backend/src/**/*.ts\"",
+    "test": "npm --prefix frontend run test",
+    "build": "npm --prefix backend run build && npm --prefix frontend run build",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.13.0",
+    "concurrently": "^9.0.1",
+    "eslint": "^9.13.0",
+    "eslint-config-prettier": "^9.1.0",
+    "husky": "^9.1.6",
+    "lint-staged": "^15.2.10",
+    "prettier": "^3.3.3",
+    "typescript-eslint": "^8.11.0"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,css}": [
+      "prettier --write"
+    ]
+  }
+}
